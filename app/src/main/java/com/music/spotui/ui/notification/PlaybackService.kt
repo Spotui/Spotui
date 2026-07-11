@@ -66,6 +66,29 @@ class PlaybackService : MediaLibraryService() {
     private var webPlayer: WebMediaPlayer? = null
     private var showingWeb = false
 
+    private val playerListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) {
+                if (currentSongState.repeat.value) {
+                    val queue = currentSongState.queue.value
+                    if (queue.isNotEmpty()) {
+                        val curId = currentSongState.songId.value
+                        val cur = queue.indexOfFirst { it.id == curId }
+                            .let { if (it >= 0) it else currentSongState.songIndex.value }
+                            .coerceIn(0, queue.size - 1)
+                        val song = queue[cur]
+                        SongPlayer.playSong(song.url, applicationContext)
+                    } else {
+                        SongPlayer.exoPlayer?.seekTo(0)
+                        SongPlayer.exoPlayer?.play()
+                    }
+                } else {
+                    advance(forward = true)
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         SongPlayer.ensureCreated(this)
@@ -93,6 +116,7 @@ class PlaybackService : MediaLibraryService() {
         // Let the player advance the in-app queue itself during a crossfade.
         SongPlayer.bindState(currentSongState)
         val base = SongPlayer.exoPlayer ?: return
+        base.addListener(playerListener)
 
         // Tapping the notification opens the app (back on the Now Playing screen).
         val activityIntent = Intent(this, MainActivity::class.java).apply {
@@ -113,6 +137,7 @@ class PlaybackService : MediaLibraryService() {
         // (runs on the main thread; setPlayer is the supported way to swap a session's player).
         SongPlayer.onPlayerSwapped = { newPlayer ->
             if (!showingWeb) mediaSession?.player = wrap(newPlayer)
+            newPlayer.addListener(playerListener)
         }
 
         // As the hidden web player streams, keep the notification in sync and swap
@@ -182,7 +207,7 @@ class PlaybackService : MediaLibraryService() {
         val song = queue[nextIdx]
         currentSongState.updateSongState(
             song.coverUri, song.title, song.singer, true,
-            song.id, nextIdx, currentSongState.album.value
+            song.id, nextIdx, song.album
         )
         SongPlayer.playSong(song.url, applicationContext)
     }
@@ -404,6 +429,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        SongPlayer.exoPlayer?.removeListener(playerListener)
         SongPlayer.onPlayerSwapped = null
         SpotifyWebPlayer.onStateChanged = null
         webPlayer?.release()

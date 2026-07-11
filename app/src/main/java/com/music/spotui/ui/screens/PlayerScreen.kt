@@ -368,16 +368,7 @@ fun PlayerScreen(navController: NavController) {
 
 
 
-    if((songProgressText != "0:00") && (songDurationText == songProgressText)){
-        if(repeat){
-            SongPlayer.seekTo(0)
-        }
-        else{
-            // Debounced: this block re-runs every recomposition until the next
-            // track's stream actually starts, so it must not skip repeatedly.
-            playerViewModel.autoAdvance(queueSongs, context)
-        }
-    }
+
 
     Log.d("queueSongaa", songs.toString())
     Log.d("queueSongc", playerViewModel.currentSongAlbum.value.toString())

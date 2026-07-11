@@ -163,7 +163,7 @@ fun QueueScreen(navController: NavController) {
                                 val idx = queue.indexOfFirst { it.id == song.id }
                                 playerViewModel.updateSongState(
                                     song.coverUri, song.title, song.singer, true,
-                                    song.id, idx.coerceAtLeast(0), playerViewModel.currentSongAlbum.value
+                                    song.id, idx.coerceAtLeast(0), song.album
                                 )
                                 SongPlayer.playSong(song.url, context)
                                 navController.navigateUp()
