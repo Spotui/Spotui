@@ -42,6 +42,8 @@ object SongPlayer {
     // Which engine each cached stream came from ("YouTube", "Lossless • …") so a
     // cache hit can restore the correct source badge.
     private val sourceCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    // Cache of resolved YouTube video candidates keyed by the play query
+    private val videoCandidatesCache = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
 
     // ── Lossless (SpotiFLAC) ──
     // When enabled, playback first tries to resolve a lossless FLAC stream (Tidal/
@@ -1001,6 +1003,8 @@ object SongPlayer {
         query: String,
         filter: YouTube.SearchFilter = YouTube.SearchFilter.FILTER_SONG,
     ): List<String> {
+        val cacheKey = "$query|${filter.value}"
+        videoCandidatesCache[cacheKey]?.let { return it }
         val searchText = searchTextForPlayback(query)
         // A raw YouTube videoId is 11 chars with no spaces — accept it directly.
         if (searchText.length == 11 && !searchText.contains(' ')) return listOf(searchText)
@@ -1107,7 +1111,11 @@ object SongPlayer {
                         "alt=${it.unexpectedAlternates.joinToString("/")}"
                 } ?: "${ordered.count { verified(it) }} verified/${ordered.size}"),
         )
-        return ordered.map { it.id }.distinct()
+        val resolvedIds = ordered.map { it.id }.distinct()
+        if (resolvedIds.isNotEmpty()) {
+            videoCandidatesCache[cacheKey] = resolvedIds
+        }
+        return resolvedIds
     }
 
     /**
