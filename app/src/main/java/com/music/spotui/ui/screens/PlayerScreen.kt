@@ -374,22 +374,25 @@ fun PlayerScreen(navController: NavController) {
     Log.d("queueSongc", playerViewModel.currentSongAlbum.value.toString())
     Log.d("queueSong", queueSongs.toString())
 
-    LaunchedEffect(key1 = songPlayingState) {
+    LaunchedEffect(playerViewModel.currentSongId.value, songPlayingState) {
+        while (true) {
+            val dur = SongPlayer.getDuration()
+            songDurationText = if (dur < 0) "0:00" else playerViewModel.formatDuration(dur)
 
-            while (songPlayingState) {
+            val pos = SongPlayer.getCurrentPosition()
+            songProgress = pos.toFloat()
+            songProgressText = if (pos < 0) "0:00" else playerViewModel.formatDuration(pos)
 
-                    songProgress = SongPlayer.getCurrentPosition().toFloat()
-                    songProgressText = playerViewModel.formatDuration(songProgress.toLong())
-
-//                if (songProgress >= songDuration ) {
-//                    if (playerViewModel.repeatState.value){
-//                        SongPlayer.seekTo(0) // Restart the song
-//                    }
-//                }
-
-
-                delay(300L) // update every .0 second
+            if (songPlayingState) {
+                delay(300L)
+            } else {
+                if (dur > 0) {
+                    delay(2000L)
+                } else {
+                    delay(300L)
+                }
             }
+        }
     }
 
 
