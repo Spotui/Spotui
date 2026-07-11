@@ -69,6 +69,20 @@ class PlaybackService : MediaLibraryService() {
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
+                if (SongPlayer.isCrossfadeActive()) {
+                    // Ignore the old player's STATE_ENDED event during an active crossfade.
+                    // The crossfade routine itself handles the transition and promotes the new player.
+                    return
+                }
+                val p = SongPlayer.exoPlayer
+                if (p != null) {
+                    val duration = p.duration
+                    val position = p.currentPosition
+                    if (duration <= 0 || position < duration - 1000) {
+                        // Spurious STATE_ENDED event (e.g. player cleared/reset or ended prematurely before loading)! Ignore it!
+                        return
+                    }
+                }
                 if (currentSongState.repeat.value) {
                     val queue = currentSongState.queue.value
                     if (queue.isNotEmpty()) {
@@ -86,6 +100,17 @@ class PlaybackService : MediaLibraryService() {
                     advance(forward = true)
                 }
             }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            android.util.Log.e("PlaybackService", "Player error during playback: ${error.message}", error)
+            val queue = currentSongState.queue.value
+            val curId = currentSongState.songId.value
+            val cur = queue.indexOfFirst { it.id == curId }
+            if (cur >= 0) {
+                SongPlayer.invalidateResolvedStream(queue[cur].url)
+            }
+            advance(forward = true)
         }
     }
 

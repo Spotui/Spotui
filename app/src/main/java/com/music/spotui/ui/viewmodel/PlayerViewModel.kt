@@ -224,6 +224,14 @@ class PlayerViewModel @Inject constructor(private val currentSongState: CurrentS
                         }
                         return@launch
                     }
+                    if (!radioLoading) {
+                        val first = queueSongs.first()
+                        withContext(Dispatchers.Main) {
+                            updateSongState(first.coverUri, first.title, first.singer, true, first.id, 0, first.album)
+                            SongPlayer.playSong(first.url, context)
+                        }
+                        return@launch
+                    }
                     delay(250L)
                 }
                 // Radio never arrived (offline / no seed id) — loop like before.
