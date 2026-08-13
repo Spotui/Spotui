@@ -51,6 +51,8 @@ import com.music.spotui.data.preferences.getCellularQuality
 import com.music.spotui.data.preferences.getCrossfadeMs
 import com.music.spotui.data.preferences.setCrossfadeMs
 import com.music.spotui.data.preferences.getDownloadQuality
+import com.music.spotui.data.preferences.isCanvasEnabled
+import com.music.spotui.data.preferences.setCanvasEnabled
 import com.music.spotui.data.preferences.isVideoFallbackEnabled
 import com.music.spotui.data.preferences.getWifiQuality
 import com.music.spotui.data.preferences.setCellularQuality
@@ -70,6 +72,7 @@ fun SettingsScreen(navController: NavController) {
     var dlQ by remember { mutableStateOf(getDownloadQuality(context)) }
     var crossfadeMs by remember { mutableStateOf(getCrossfadeMs(context).toFloat()) }
     var videoFallback by remember { mutableStateOf(isVideoFallbackEnabled(context)) }
+    var canvasEnabled by remember { mutableStateOf(isCanvasEnabled(context)) }
     // Read fresh each composition so returning from the Deezer login reflects it.
     val deezerConnected = com.music.spotui.data.preferences.getDeezerArl(context) != null
     val deezerTier = com.music.spotui.data.preferences.getDeezerTier(context)
@@ -142,6 +145,17 @@ fun SettingsScreen(navController: NavController) {
             ) {
                 videoFallback = it
                 setVideoFallbackEnabled(context, it)
+            }
+
+            Spacer(Modifier.height(12.dp))
+            SectionTitle("Now Playing")
+            SettingsSwitchRow(
+                title = "Spotify Canvas",
+                subtitle = "Show the looping background video on the player screen",
+                checked = canvasEnabled,
+            ) {
+                canvasEnabled = it
+                setCanvasEnabled(context, it)
             }
 
             Spacer(Modifier.height(12.dp))

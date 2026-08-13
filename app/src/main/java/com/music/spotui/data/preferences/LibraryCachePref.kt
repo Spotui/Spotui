@@ -50,6 +50,45 @@ fun loadLibraryCache(context: Context): List<LibraryEntry>? {
 }
 
 // ---------------------------------------------------------------------------
+// Liked Songs cache — same idea, for getLikedSongs() (see #69 / #33 / #51):
+// it only ever came straight from the network, so opening "Liked Songs"
+// offline always hard-errored even right after it had loaded fine.
+// ---------------------------------------------------------------------------
+
+private const val LIKED_PREF = "LikedSongsCache"
+private const val LIKED_KEY = "songs"
+
+private fun com.music.spotui.data.entity.SongsModel.toJson(): JSONObject = JSONObject().apply {
+    put("id", id); put("title", title); put("album", album); put("singer", singer)
+    put("coverUri", coverUri); put("url", url); put("spotifyTrackId", spotifyTrackId)
+    put("explicit", explicit); put("durationMs", durationMs)
+}
+
+private fun parseSong(o: JSONObject): com.music.spotui.data.entity.SongsModel = com.music.spotui.data.entity.SongsModel(
+    id = o.getInt("id"), title = o.getString("title"), album = o.optString("album"),
+    singer = o.optString("singer"), coverUri = o.optString("coverUri"), url = o.optString("url"),
+    spotifyTrackId = o.optString("spotifyTrackId"), explicit = o.optBoolean("explicit", false),
+    durationMs = o.optInt("durationMs", 0),
+)
+
+fun saveLikedSongsCache(context: Context, songs: List<com.music.spotui.data.entity.SongsModel>) {
+    val arr = JSONArray()
+    songs.forEach { arr.put(it.toJson()) }
+    context.getSharedPreferences(LIKED_PREF, Context.MODE_PRIVATE).edit()
+        .putString(LIKED_KEY, arr.toString())
+        .apply()
+}
+
+fun loadLikedSongsCache(context: Context): List<com.music.spotui.data.entity.SongsModel>? {
+    val json = context.getSharedPreferences(LIKED_PREF, Context.MODE_PRIVATE)
+        .getString(LIKED_KEY, null) ?: return null
+    return runCatching {
+        val arr = JSONArray(json)
+        (0 until arr.length()).map { parseSong(arr.getJSONObject(it)) }
+    }.getOrNull()
+}
+
+// ---------------------------------------------------------------------------
 // Home feed cache — same idea, for the Home/Discover tab (getHomeFeed()),
 // which previously also only cached in memory and errored out on a cold
 // offline start even if it had loaded fine minutes earlier.

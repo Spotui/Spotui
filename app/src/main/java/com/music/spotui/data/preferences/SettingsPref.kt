@@ -44,7 +44,7 @@ private fun readQ(c: Context, key: String, def: StreamQuality): StreamQuality =
 private fun writeQ(c: Context, key: String, q: StreamQuality) =
     prefs(c).edit().putString(key, q.name).apply()
 
-fun getWifiQuality(c: Context): StreamQuality = readQ(c, KEY_WIFI_Q, StreamQuality.HIGH)
+fun getWifiQuality(c: Context): StreamQuality = readQ(c, KEY_WIFI_Q, StreamQuality.LOSSLESS)
 fun setWifiQuality(c: Context, q: StreamQuality) = writeQ(c, KEY_WIFI_Q, q)
 
 fun getCellularQuality(c: Context): StreamQuality = readQ(c, KEY_CELL_Q, StreamQuality.NORMAL)
@@ -105,3 +105,9 @@ fun currentStreamingQuality(c: Context): StreamQuality {
     val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
     return if (cm.isActiveNetworkMetered) getCellularQuality(c) else getWifiQuality(c)
 }
+
+/** Spotify Canvas (looping video behind the now-playing screen). Fetches a video
+ *  per track over the network, so some people prefer to turn it off — see #55. */
+private const val KEY_CANVAS_ENABLED = "canvas_enabled"
+fun isCanvasEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_CANVAS_ENABLED, true)
+fun setCanvasEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_CANVAS_ENABLED, v).apply()

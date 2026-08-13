@@ -676,9 +676,15 @@ class Api @Inject constructor(
 
     /** The user's Spotify "Liked Songs" (saved tracks) as playable songs. */
     suspend fun getLikedSongs(): Flow<Response<List<SongsModel>>> = flow {
-        emit(Response.Loading())
+        // Same offline-cache pattern as getLibrary()/getHomeFeed() (see #69):
+        // fall back to the last successfully fetched list on disk before
+        // touching the network, and never leave the screen on a hard error
+        // if we have something — even stale — to show instead.
+        val diskCache = com.music.spotui.data.preferences.loadLikedSongsCache(context)
+        diskCache?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            emit(Response.Error("Spotify not authenticated")); return@flow
+            if (diskCache == null) emit(Response.Error("Spotify not authenticated"))
+            return@flow
         }
         Spotify.likedSongs(limit = 50).fold(
             onSuccess = { first ->
@@ -698,8 +704,12 @@ class Api @Inject constructor(
                     offset += page.items.size
                     emit(Response.Success(models.toList()))
                 }
+                com.music.spotui.data.preferences.saveLikedSongsCache(context, models)
             },
-            onFailure = { Log.e("Api", "getLikedSongs failed", it); emit(Response.Error(it.message ?: "error")) },
+            onFailure = {
+                Log.e("Api", "getLikedSongs failed", it)
+                if (diskCache == null) emit(Response.Error(it.message ?: "error"))
+            },
         )
     }
 
