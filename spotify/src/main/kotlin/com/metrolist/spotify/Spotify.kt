@@ -494,6 +494,7 @@ object Spotify {
             val lyricsObj =
                 root.obj("lyrics") ?: throw SpotifyException(500, "Invalid color-lyrics response")
             val synced = lyricsObj.str("syncType") == "LINE_SYNCED"
+            val language = lyricsObj.str("language")?.takeIf { it.isNotBlank() }
             val lines =
                 lyricsObj.arr("lines")?.mapNotNull { el ->
                     val o = el.jsonObject
@@ -505,7 +506,11 @@ object Spotify {
                 }.orEmpty()
             if (lines.isEmpty()) throw SpotifyException(404, "Empty lyrics for $trackId")
             log("D", "lyrics($trackId) OK — ${lines.size} lines, synced=$synced")
-            com.metrolist.spotify.models.SpotifyLyrics(synced = synced, lines = lines)
+            com.metrolist.spotify.models.SpotifyLyrics(
+                synced = synced,
+                lines = lines,
+                language = language,
+            )
         }
 
     // ── Playlists (GQL: libraryV3) ──────────────────────────────────────

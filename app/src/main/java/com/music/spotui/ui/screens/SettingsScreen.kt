@@ -23,6 +23,8 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -51,14 +53,24 @@ import com.music.spotui.data.preferences.getCellularQuality
 import com.music.spotui.data.preferences.getCrossfadeMs
 import com.music.spotui.data.preferences.setCrossfadeMs
 import com.music.spotui.data.preferences.getDownloadQuality
+import com.music.spotui.data.preferences.getLyricTranslateLang
 import com.music.spotui.data.preferences.isVideoFallbackEnabled
 import com.music.spotui.data.preferences.getWifiQuality
 import com.music.spotui.data.preferences.setCellularQuality
 import com.music.spotui.data.preferences.setDownloadQuality
+import com.music.spotui.data.preferences.setLyricTranslateLang
 import com.music.spotui.data.preferences.setVideoFallbackEnabled
 import com.music.spotui.data.preferences.setWifiQuality
 import com.music.spotui.ui.theme.AppBackground
 import com.music.spotui.ui.theme.AppPalette
+import java.util.Locale
+
+private val translateLanguages by lazy {
+    Locale.getISOLanguages()
+        .map { it to Locale.forLanguageTag(it).getDisplayLanguage(Locale.getDefault()) }
+        .filter { it.second.isNotBlank() }
+        .sortedBy { it.second }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +82,8 @@ fun SettingsScreen(navController: NavController) {
     var dlQ by remember { mutableStateOf(getDownloadQuality(context)) }
     var crossfadeMs by remember { mutableStateOf(getCrossfadeMs(context).toFloat()) }
     var videoFallback by remember { mutableStateOf(isVideoFallbackEnabled(context)) }
+    var selectedLanguage by remember { mutableStateOf(getLyricTranslateLang(context)) }
+    var languageQuery by remember { mutableStateOf("") }
     // Read fresh each composition so returning from the Deezer login reflects it.
     val deezerConnected = com.music.spotui.data.preferences.getDeezerArl(context) != null
     val deezerTier = com.music.spotui.data.preferences.getDeezerTier(context)
@@ -143,6 +157,76 @@ fun SettingsScreen(navController: NavController) {
                 videoFallback = it
                 setVideoFallbackEnabled(context, it)
             }
+
+            Spacer(Modifier.height(12.dp))
+            SectionTitle("Lyrics")
+            val languageMatches = remember(languageQuery) {
+                val query = languageQuery.trim()
+                if (query.isBlank()) {
+                    emptyList()
+                } else {
+                    translateLanguages.filter { (code, name) ->
+                        code.contains(query, true) || name.contains(query, true)
+                    }.sortedWith(
+                        compareByDescending<Pair<String, String>> {
+                            it.first.equals(query, true) || it.second.equals(query, true)
+                        }.thenBy { it.second }
+                    ).take(8)
+                }
+            }
+            OutlinedTextField(
+                value = languageQuery,
+                onValueChange = {
+                    languageQuery = it
+                    if (it.isBlank()) {
+                        selectedLanguage = ""
+                        setLyricTranslateLang(context, "")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                singleLine = true,
+                label = { Text("Translate lyrics to", color = Color(0xFFB3B3B3)) },
+                placeholder = { Text("Search languages", color = Color(0xFF72728A)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = AppPalette,
+                    focusedBorderColor = AppPalette,
+                    unfocusedBorderColor = Color(0xFF3A3A46),
+                    focusedLabelColor = AppPalette,
+                    unfocusedLabelColor = Color(0xFFB3B3B3),
+                    focusedContainerColor = AppBackground,
+                    unfocusedContainerColor = AppBackground,
+                ),
+            )
+            languageMatches.forEach { (code, name) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1A1A20))
+                        .clickable {
+                            selectedLanguage = code
+                            setLyricTranslateLang(context, code)
+                            languageQuery = ""
+                        }
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(name, color = Color.White, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                    Text(code, color = AppPalette, fontSize = 13.sp)
+                }
+            }
+            Text(
+                text = if (selectedLanguage.isBlank()) {
+                    "Using phone language"
+                } else {
+                    "Selected: ${translateLanguages.firstOrNull { it.first == selectedLanguage }?.second ?: selectedLanguage} ($selectedLanguage)"
+                },
+                color = Color(0xFFB3B3B3),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+            )
 
             Spacer(Modifier.height(12.dp))
             SectionTitle("Crossfade")

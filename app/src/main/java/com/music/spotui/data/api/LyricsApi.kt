@@ -110,6 +110,7 @@ object LyricsApi {
                 Lyrics(
                     lines = sp.lines.map { LyricLine(it.startMs, it.words) },
                     synced = sp.synced,
+                    language = sp.language,
                 )
             },
             onFailure = {

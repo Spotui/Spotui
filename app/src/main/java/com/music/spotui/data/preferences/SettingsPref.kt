@@ -30,6 +30,7 @@ private const val KEY_CROSSFADE_DJ = "crossfade_dj_mode"
 private const val KEY_WEB_PLAYBACK = "web_playback_enabled"
 private const val KEY_VIDEO_FALLBACK = "video_fallback_enabled"
 private const val KEY_LIBRARY_GRID = "library_grid_view"
+private const val KEY_LYRIC_TRANSLATE_LANG = "lyric_translate_lang"
 
 /** Off (0s) … 12s. 0 disables crossfade. */
 const val CROSSFADE_MIN_MS = 0
@@ -82,6 +83,13 @@ fun setWebPlaybackEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean(K
 fun isVideoFallbackEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_VIDEO_FALLBACK, true)
 fun setVideoFallbackEnabled(c: Context, v: Boolean) =
     prefs(c).edit().putBoolean(KEY_VIDEO_FALLBACK, v).apply()
+
+/** Lyric translation target (e.g. en, ja). Empty = device language. */
+fun getLyricTranslateLang(c: Context): String =
+    prefs(c).getString(KEY_LYRIC_TRANSLATE_LANG, "").orEmpty()
+
+fun setLyricTranslateLang(c: Context, code: String) =
+    prefs(c).edit().putString(KEY_LYRIC_TRANSLATE_LANG, code.trim()).apply()
 
 /**
  * Crossfade overlap length in ms (0 = off). When > 0, the end of each track is blended

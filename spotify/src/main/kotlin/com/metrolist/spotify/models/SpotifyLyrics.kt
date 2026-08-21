@@ -8,6 +8,7 @@ package com.metrolist.spotify.models
 data class SpotifyLyrics(
     val synced: Boolean,
     val lines: List<SpotifyLyricLine>,
+    val language: String?,
 )
 
 data class SpotifyLyricLine(

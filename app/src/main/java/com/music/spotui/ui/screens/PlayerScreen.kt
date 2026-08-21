@@ -5,8 +5,14 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -126,6 +132,10 @@ fun PlayerScreen(navController: NavController) {
     var showMenu by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
     var showSavedIn by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showLyrics) {
+        showLyrics = false
+    }
 
     if (showMenu) {
         PlayerOptionsSheet(
@@ -507,7 +517,17 @@ fun PlayerScreen(navController: NavController) {
         }
         }
 
-        if (showLyrics) {
+        AnimatedVisibility(
+            visible = showLyrics,
+            enter = slideInVertically(
+                animationSpec = tween(durationMillis = 250, easing = EaseOut),
+                initialOffsetY = { it },
+            ),
+            exit = slideOutVertically(
+                animationSpec = tween(durationMillis = 200, easing = EaseOut),
+                targetOffsetY = { it },
+            ),
+        ) {
             LyricsScreen(
                 title = songTitle,
                 artist = songSinger,
