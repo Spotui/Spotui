@@ -132,27 +132,30 @@ object SpotifyCanvas {
         }
         fun readVarint(): Long {
             var result = 0L; var shift = 0
-            while (true) {
+            while (pos < data.size) {
                 val b = data[pos++].toInt() and 0xFF
                 result = result or ((b and 0x7F).toLong() shl shift)
-                if (b and 0x80 == 0) break
+                if (b and 0x80 == 0) return result
                 shift += 7
+                if (shift >= 64) break
             }
             return result
         }
         fun readBytes(): ByteArray {
             val len = readVarint().toInt()
-            val out = data.copyOfRange(pos, pos + len)
-            pos += len
+            if (len <= 0) return ByteArray(0)
+            val end = (pos + len).coerceAtMost(data.size)
+            val out = if (pos < data.size) data.copyOfRange(pos, end) else ByteArray(0)
+            pos = end
             return out
         }
         /** Skip a field's value given its wire type. */
         fun skip(wire: Int) {
             when (wire) {
                 0 -> readVarint()
-                1 -> pos += 8
-                2 -> { val len = readVarint().toInt(); pos += len }
-                5 -> pos += 4
+                1 -> pos = (pos + 8).coerceAtMost(data.size)
+                2 -> { val len = readVarint().toInt().coerceAtLeast(0); pos = (pos + len).coerceAtMost(data.size) }
+                5 -> pos = (pos + 4).coerceAtMost(data.size)
                 else -> pos = data.size
             }
         }

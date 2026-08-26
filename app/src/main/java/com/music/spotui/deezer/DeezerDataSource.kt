@@ -134,6 +134,12 @@ internal class DeezerDataSource : BaseDataSource(/* isNetwork = */ true) {
         var start = 0
         var len = total
         if (dropFirst > 0) {
+            if (dropFirst >= total) {
+                dropFirst -= total
+                pending = ByteArray(0)
+                pendingPos = 0
+                return fillPending()
+            }
             start = dropFirst
             len = total - dropFirst
             dropFirst = 0

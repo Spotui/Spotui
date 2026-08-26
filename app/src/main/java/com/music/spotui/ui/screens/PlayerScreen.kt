@@ -626,7 +626,8 @@ fun PlayerInfo(
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
-                .width(270.dp)
+                .weight(1f)
+                .padding(end = 12.dp)
         ) {
 //                        GlideImage(
 //                            modifier = Modifier.size(60.dp),

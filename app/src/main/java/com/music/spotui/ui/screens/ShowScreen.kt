@@ -133,7 +133,7 @@ fun ShowScreen(navController: NavController, showId: String, showName: String = 
                     modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)),
                     contentDescription = null,
                 )
-                Column(modifier = Modifier.padding(start = 12.dp)) {
+                Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
                     Text(
                         ep.title,
                         color = if (ep.id == vm.currentSongId.value) Color(0xFF1ED760) else Color.White,

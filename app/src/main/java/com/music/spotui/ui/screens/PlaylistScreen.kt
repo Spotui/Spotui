@@ -355,7 +355,7 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                             contentScale = ContentScale.Crop,
                             contentDescription = ""
                         )
-                        Column(modifier = Modifier.padding(start = 12.dp).width(280.dp)) {
+                        Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
                             Text(
                                 text = song.title,
                                 color = currentColor,

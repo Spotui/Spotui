@@ -24,7 +24,7 @@ fun isSongLiked(context: Context, songId: String): Boolean {
 
 fun getLikedSongIds(context: Context): Set<Int> {
     val sharedPreferences = context.getSharedPreferences("LikedSongs", Context.MODE_PRIVATE)
-    return sharedPreferences.all.keys.map { it.toInt() }.toSet()
+    return sharedPreferences.all.keys.mapNotNull { it.toIntOrNull() }.toSet()
 }
 
 fun getSongsByIds(songIds: Set<Int>, songs: List<SongsModel>): List<SongsModel> {

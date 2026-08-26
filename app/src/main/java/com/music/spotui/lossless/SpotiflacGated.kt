@@ -100,13 +100,16 @@ internal object SpotiflacGated {
             setRequestProperty("Content-Type", "application/json")
             headers.forEach { (k, v) -> setRequestProperty(k, v) }
         }
-        conn.outputStream.use { it.write(body) }
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        conn.disconnect()
-        if (code !in 200..299) throw java.io.IOException("HTTP $code: ${text.take(160)}")
-        return text
+        return try {
+            conn.outputStream.use { it.write(body) }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw java.io.IOException("HTTP $code: ${text.take(160)}")
+            text
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray =

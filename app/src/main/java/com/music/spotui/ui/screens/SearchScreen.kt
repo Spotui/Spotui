@@ -437,7 +437,7 @@ fun SearchSongRow(
         Row(
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.width(280.dp),
+            modifier = Modifier.weight(1f).padding(end = 8.dp),
         ) {
             GlideImage(
                 modifier = Modifier
@@ -450,7 +450,7 @@ fun SearchSongRow(
                 loading = placeholder(R.drawable.placeholder),
                 contentDescription = "",
             )
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(text = song.title, color = currentPlayingIndicatorColor, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                 Text(text = "Song • ${song.singer}", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
             }

@@ -102,6 +102,7 @@ fun setCrossfadeDjMode(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_
  * on a metered connection (mobile data / metered hotspot), the Wi-Fi setting otherwise.
  */
 fun currentStreamingQuality(c: Context): StreamQuality {
-    val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    return if (cm.isActiveNetworkMetered) getCellularQuality(c) else getWifiQuality(c)
+    val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    val isMetered = cm?.isActiveNetworkMetered ?: false
+    return if (isMetered) getCellularQuality(c) else getWifiQuality(c)
 }

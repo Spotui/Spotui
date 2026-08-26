@@ -55,10 +55,11 @@ object UpdateChecker {
         val conn = URL(RELEASE_API).openConnection() as HttpURLConnection
         conn.connectTimeout = 8000
         conn.readTimeout = 8000
+        conn.setRequestProperty("User-Agent", "Spotui-App")
         conn.setRequestProperty("Accept", "application/vnd.github+json")
         try {
             if (conn.responseCode != 200) return null
-            val json = JSONObject(conn.inputStream.bufferedReader().readText())
+            val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
             // The tag is the fixed "Release", so the version lives in the release
             // title (e.g. "spotui 1.2"), falling back to the description.
             val version = extractVersion(json.optString("name"))

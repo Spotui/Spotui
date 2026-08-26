@@ -120,17 +120,19 @@ class NewPipeUtils(
 }
 
 object NewPipeExtractor {
-    private var newPipeDownloader: NewPipeDownloaderImpl? = null
-    private var newPipeUtils: NewPipeUtils? = null
-    private var isInitialized = false
+    @Volatile private var newPipeDownloader: NewPipeDownloaderImpl? = null
+    @Volatile private var newPipeUtils: NewPipeUtils? = null
+    @Volatile private var isInitialized = false
 
+    @Synchronized
     fun init() {
         if (!isInitialized) {
-            newPipeDownloader = NewPipeDownloaderImpl(
+            val downloader = NewPipeDownloaderImpl(
                 proxy = YouTube.proxy,
                 proxyAuth = YouTube.proxyAuth
             )
-            newPipeUtils = NewPipeUtils(newPipeDownloader!!)
+            newPipeDownloader = downloader
+            newPipeUtils = NewPipeUtils(downloader)
             isInitialized = true
         }
     }

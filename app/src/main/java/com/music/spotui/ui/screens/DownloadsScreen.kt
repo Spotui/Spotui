@@ -288,7 +288,7 @@ fun DownloadsScreen(navController: NavController) {
                                 contentScale = ContentScale.Crop,
                                 contentDescription = ""
                             )
-                            Column(modifier = Modifier.padding(start = 12.dp).width(280.dp)) {
+                            Column(modifier = Modifier.padding(start = 12.dp).weight(1f)) {
                                 Text(text = song.title, color = currentColor, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                                 Text(text = song.singer, color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                             }

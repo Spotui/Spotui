@@ -210,8 +210,9 @@ internal object DeezerSession {
     }
 
     private fun post(urlString: String, body: String?, headers: Map<String, String>): String? {
+        var conn: HttpURLConnection? = null
         return try {
-            val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
+            conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
                 connectTimeout = 20_000
                 readTimeout = 20_000
                 doOutput = true
@@ -225,10 +226,14 @@ internal object DeezerSession {
             if (body != null) {
                 conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             }
-            conn.inputStream.bufferedReader().use { it.readText() }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            stream?.bufferedReader()?.use { it.readText() }
         } catch (e: Exception) {
             Log.e(TAG, "POST $urlString failed: $e")
             null
+        } finally {
+            conn?.disconnect()
         }
     }
 

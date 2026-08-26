@@ -93,7 +93,7 @@ object SpotifySync {
             val ok = trackId.isBlank() ||
                 Spotify.addTracksToPlaylist(playlist.id, listOf("spotify:track:$trackId")).isSuccess
             if (ok && trackId.isNotBlank()) {
-                membershipCache[playlist.id] = mutableSetOf(trackId)
+                membershipCache[playlist.id] = java.util.concurrent.ConcurrentHashMap.newKeySet<String>().apply { add(trackId) }
             }
             onDone(ok)
         }

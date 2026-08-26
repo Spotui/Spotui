@@ -331,7 +331,7 @@ private fun QualityPicker(
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        StreamQuality.values().forEach { q ->
+        StreamQuality.entries.forEach { q ->
             val isSel = q == selected
             Row(
                 modifier = Modifier

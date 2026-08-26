@@ -194,12 +194,15 @@ object LosslessSource {
             setRequestProperty("Accept", "application/json, text/plain, */*")
             headers.forEach { (k, v) -> setRequestProperty(k, v) }
         }
-        conn.connect()
-        val code = conn.responseCode
-        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        conn.disconnect()
-        if (code !in 200..299) throw java.io.IOException("HTTP $code: ${text.take(120)}")
-        return text
+        return try {
+            conn.connect()
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) throw java.io.IOException("HTTP $code: ${text.take(120)}")
+            text
+        } finally {
+            conn.disconnect()
+        }
     }
 }
