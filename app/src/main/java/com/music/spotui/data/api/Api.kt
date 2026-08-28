@@ -157,9 +157,18 @@ class Api @Inject constructor(
      * etc. Process-cached like the other home feeds for instant re-entry.
      */
     suspend fun getHomeFeed(): Flow<Response<HomeFeedModel>> = flow {
-        HomeCache.home?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
+        val diskHome = HomeCache.home
+            ?: com.music.spotui.data.preferences.loadHomeFeedCache(context)?.also { HomeCache.home = it }
+        diskHome?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            if (HomeCache.home == null) emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            if (diskHome == null) {
+                // No cache at all and no connection: show an empty (but
+                // successful) feed instead of a hard error banner blocking
+                // the whole Home tab — Library/Downloads are still usable.
+                val empty = HomeFeedModel()
+                HomeCache.home = empty
+                emit(Response.Success(empty))
+            }
             return@flow
         }
         Spotify.home(sectionItemsLimit = 20).fold(
@@ -177,6 +186,7 @@ class Api @Inject constructor(
                 }.distinctBy { it.title.lowercase().ifBlank { it.hashCode().toString() } }
                 val model = HomeFeedModel(greeting = feed.greeting ?: "", sections = sections)
                 HomeCache.home = model
+                com.music.spotui.data.preferences.saveHomeFeedCache(context, model)
                 emit(Response.Success(model))
             },
             onFailure = {
@@ -574,9 +584,35 @@ class Api @Inject constructor(
      * GQL endpoint (not rate-limited). Process-cached for instant re-entry.
      */
     suspend fun getLibrary(): Flow<Response<List<com.music.spotui.data.entity.LibraryEntry>>> = flow {
-        HomeCache.library?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
+        // Fall back to the on-disk cache (survives process death) when there's
+        // nothing in memory yet, e.g. a cold start with no internet.
+        val diskCache = HomeCache.library
+            ?: com.music.spotui.data.preferences.loadLibraryCache(context)?.also { HomeCache.library = it }
+        diskCache?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            if (HomeCache.library == null) emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            if (diskCache == null) {
+                // First ever launch with no connection: still surface the local
+                // shortcuts (Liked Songs / Downloaded) instead of a hard error,
+                // so offline downloads remain reachable without any network call.
+                val offline = listOf(
+                    com.music.spotui.data.entity.LibraryEntry(
+                        spotifyId = LIKED_SONGS_ID,
+                        name = "Liked Songs",
+                        subtitle = "Playlist • Liked songs",
+                        coverUri = "https://misc.scdn.co/liked-songs/liked-songs-640.png",
+                        isPlaylist = true,
+                    ),
+                    com.music.spotui.data.entity.LibraryEntry(
+                        spotifyId = DOWNLOADS_ID,
+                        name = "Downloaded",
+                        subtitle = "Available offline",
+                        coverUri = "",
+                        isPlaylist = true,
+                    ),
+                )
+                HomeCache.library = offline
+                emit(Response.Success(offline))
+            }
             return@flow
         }
         val albums = fetchAllPages { offset -> Spotify.myAlbums(limit = 50, offset = offset) }.map { a ->
@@ -616,6 +652,7 @@ class Api @Inject constructor(
         )
         val merged = listOf(liked, downloaded) + playlists + albums
         HomeCache.library = merged
+        com.music.spotui.data.preferences.saveLibraryCache(context, merged)
         emit(Response.Success(merged))
     }
 
@@ -639,9 +676,15 @@ class Api @Inject constructor(
 
     /** The user's Spotify "Liked Songs" (saved tracks) as playable songs. */
     suspend fun getLikedSongs(): Flow<Response<List<SongsModel>>> = flow {
-        emit(Response.Loading())
+        // Same offline-cache pattern as getLibrary()/getHomeFeed() (see #69):
+        // fall back to the last successfully fetched list on disk before
+        // touching the network, and never leave the screen on a hard error
+        // if we have something — even stale — to show instead.
+        val diskCache = com.music.spotui.data.preferences.loadLikedSongsCache(context)
+        diskCache?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            emit(Response.Error("Spotify not authenticated")); return@flow
+            if (diskCache == null) emit(Response.Error("Spotify not authenticated"))
+            return@flow
         }
         Spotify.likedSongs(limit = 50).fold(
             onSuccess = { first ->
@@ -661,8 +704,12 @@ class Api @Inject constructor(
                     offset += page.items.size
                     emit(Response.Success(models.toList()))
                 }
+                com.music.spotui.data.preferences.saveLikedSongsCache(context, models)
             },
-            onFailure = { Log.e("Api", "getLikedSongs failed", it); emit(Response.Error(it.message ?: "error")) },
+            onFailure = {
+                Log.e("Api", "getLikedSongs failed", it)
+                if (diskCache == null) emit(Response.Error(it.message ?: "error"))
+            },
         )
     }
 

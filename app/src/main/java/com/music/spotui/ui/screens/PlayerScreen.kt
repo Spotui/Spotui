@@ -237,10 +237,16 @@ fun PlayerScreen(navController: NavController) {
         }
     }
 
-    // Load the current track's Spotify Canvas (full-screen looping video background).
+    // Load the current track's Spotify Canvas (full-screen looping video background),
+    // unless the user turned it off in Settings (see #55) — it fetches a video per
+    // track over the network, which not everyone wants.
     LaunchedEffect(playerViewModel.currentSongId.value, queueSongs) {
-        val track = queueSongs.firstOrNull { it.id == playerViewModel.currentSongId.value }
-        playerViewModel.loadCanvas(track?.spotifyTrackId.orEmpty())
+        if (com.music.spotui.data.preferences.isCanvasEnabled(context)) {
+            val track = queueSongs.firstOrNull { it.id == playerViewModel.currentSongId.value }
+            playerViewModel.loadCanvas(track?.spotifyTrackId.orEmpty())
+        } else {
+            playerViewModel.loadCanvas("")
+        }
     }
 
 
