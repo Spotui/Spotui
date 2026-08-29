@@ -14,6 +14,7 @@ data class LyricLine(
 data class Lyrics(
     val lines: List<LyricLine>,
     val synced: Boolean,
+    val language: String? = null,
 ) {
     val isEmpty: Boolean get() = lines.isEmpty()
 }
