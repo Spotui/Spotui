@@ -26,9 +26,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -52,6 +56,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,6 +81,7 @@ import com.music.spotui.ui.navigation.albumRoute
 import com.music.spotui.ui.navigation.artistRoute
 import com.music.spotui.ui.navigation.playlistRoute
 import com.music.spotui.ui.theme.AppBackground
+import com.music.spotui.ui.theme.AppPalette
 import com.music.spotui.ui.viewmodel.LibraryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,6 +95,8 @@ fun LibraryScreen(navController: NavController) {
     val context = LocalContext.current
     // Spotify-style layout toggle: rows or a 3-column grid, persisted across runs.
     var gridView by remember { mutableStateOf(isLibraryGridView(context)) }
+    var searchActive by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     if (showAccount) {
         AccountSheet(
@@ -118,6 +126,21 @@ fun LibraryScreen(navController: NavController) {
                 color = Color.White,
                 fontSize = 22.sp,
                 modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = "Search library",
+                tint = if (searchActive) Color(AppPalette.toArgb()) else Color.White,
+                modifier = Modifier
+                    .padding(end = 14.dp)
+                    .size(22.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        searchActive = !searchActive
+                        if (!searchActive) searchQuery = ""
+                    },
             )
             Box(
                 modifier = Modifier
@@ -160,12 +183,63 @@ fun LibraryScreen(navController: NavController) {
             )
         }
 
+        AnimatedVisibility(visible = searchActive) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp, 0.dp, 16.dp, 6.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF252525))
+                    .padding(horizontal = 12.dp),
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF888888), modifier = Modifier.size(18.dp))
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    singleLine = true,
+                    textStyle = TextStyle(color = Color.White, fontSize = 15.sp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(8.dp, 10.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (searchQuery.isEmpty()) Text("Filter your library…", color = Color(0xFF888888), fontSize = 15.sp)
+                            inner()
+                        }
+                    },
+                )
+                if (searchQuery.isNotEmpty()) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear",
+                        tint = Color(0xFF888888),
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { searchQuery = "" },
+                    )
+                }
+            }
+        }
+
         val followedArtists by libraryViewModel.followedArtists.collectAsState()
         when (entries) {
             is Response.Loading -> LibrarySkeleton(PaddingValues(0.dp))
-            is Response.Success ->
-                if (gridView) LibraryGridScreen(PaddingValues(0.dp), (entries as Response.Success).data, followedArtists, navController)
-                else SumUpLibraryScreen(PaddingValues(0.dp), (entries as Response.Success).data, followedArtists, navController)
+            is Response.Success -> {
+                val allEntries = (entries as Response.Success).data
+                val filteredEntries = if (searchQuery.isBlank()) allEntries
+                    else allEntries.filter {
+                        it.name.contains(searchQuery, ignoreCase = true) ||
+                        it.subtitle.contains(searchQuery, ignoreCase = true)
+                    }
+                val filteredArtists = if (searchQuery.isBlank()) followedArtists
+                    else followedArtists.filter { it.name.contains(searchQuery, ignoreCase = true) }
+                if (gridView) LibraryGridScreen(PaddingValues(0.dp), filteredEntries, filteredArtists, navController)
+                else SumUpLibraryScreen(PaddingValues(0.dp), filteredEntries, filteredArtists, navController)
+            }
             else -> Box(modifier = Modifier.padding(20.dp, 100.dp)) { Snackbar(showMessage = "Couldn't load your library") }
         }
     }

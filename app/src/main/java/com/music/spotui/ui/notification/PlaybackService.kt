@@ -88,6 +88,12 @@ class PlaybackService : MediaLibraryService() {
             if (!showingWeb) mediaSession?.player = wrap(newPlayer)
         }
 
+        // When stream resolution fails for a track, skip it automatically so the
+        // queue keeps moving instead of going silent (issues 2 + 3).
+        SongPlayer.onStreamFailed = { _ ->
+            advance(forward = true)
+        }
+
         // As the hidden web player streams, keep the notification in sync and swap
         // the session between the web player (during web playback) and the ExoPlayer.
         SpotifyWebPlayer.onStateChanged = {
@@ -123,11 +129,14 @@ class PlaybackService : MediaLibraryService() {
                 .add(COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
                 .add(COMMAND_SEEK_TO_PREVIOUS)
                 .add(COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                .add(COMMAND_SEEK_FORWARD)
+                .add(COMMAND_SEEK_BACK)
                 .build()
 
         override fun isCommandAvailable(command: Int): Boolean = when (command) {
             COMMAND_SEEK_TO_NEXT, COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-            COMMAND_SEEK_TO_PREVIOUS, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> true
+            COMMAND_SEEK_TO_PREVIOUS, COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+            COMMAND_SEEK_FORWARD, COMMAND_SEEK_BACK -> true
             else -> super.isCommandAvailable(command)
         }
 
@@ -334,6 +343,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onDestroy() {
         serviceScope.cancel()
         SongPlayer.onPlayerSwapped = null
+        SongPlayer.onStreamFailed = null
         SpotifyWebPlayer.onStateChanged = null
         webPlayer?.release()
         webPlayer = null

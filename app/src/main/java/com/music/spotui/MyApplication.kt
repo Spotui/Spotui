@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.util.Locale
+import timber.log.Timber
 
 @HiltAndroidApp
 class MyApplication : Application(){
@@ -27,6 +28,9 @@ class MyApplication : Application(){
     override fun onCreate() {
         super.onCreate()
         instance = this
+        if (BuildConfig.DEBUG && Timber.forest().isEmpty()) {
+            Timber.plant(Timber.DebugTree())
+        }
         // Surface Spotify REST/GQL logs to logcat for diagnosis.
         com.metrolist.spotify.Spotify.logger = { level, msg ->
             android.util.Log.d("SpotifyREST", "[$level] $msg")
@@ -44,12 +48,21 @@ class MyApplication : Application(){
             gl = locale.country.takeIf { it.isNotBlank() } ?: "US",
             hl = locale.language.takeIf { it.isNotBlank() } ?: "en",
         )
-        appScope.launch {
-            YouTube.visitorData = YouTube.visitorData().getOrNull() ?: YouTube.visitorData
+        val hasValidSavedLogin = com.music.spotui.data.preferences.isYoutubeLoggedIn(this)
+        val savedCookie = com.music.spotui.data.preferences.getYoutubeCookie(this)
+        val savedVisitorData = com.music.spotui.data.preferences.getYoutubeVisitorData(this)
+        val savedDataSyncId = com.music.spotui.data.preferences.getYoutubeDataSyncId(this)
+        YouTube.cookie = savedCookie.takeIf { hasValidSavedLogin && it.isNotBlank() }
+        YouTube.visitorData = savedVisitorData.takeIf { it.isNotBlank() }
+        YouTube.dataSyncId = savedDataSyncId.takeIf { it.isNotBlank() }
+        // Meld searches/browses with the same signed-in account used by /player.
+        // Leaving this false makes search anonymous and can return the clean edit.
+        YouTube.useLoginForBrowse = hasValidSavedLogin
+        if (YouTube.visitorData.isNullOrBlank()) {
+            appScope.launch {
+                YouTube.visitorData = YouTube.visitorData().getOrNull() ?: YouTube.visitorData
+            }
         }
-        // YouTube playback runs anonymously; age-gated official audio falls back
-        // to matching normal YouTube uploads instead of requiring sign-in.
-        YouTube.cookie = null
 
         // Warm the Home feed cache so the first navigation to Home is instant.
         // No-op (gracefully) until a Spotify token is available.

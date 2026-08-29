@@ -66,9 +66,44 @@ fun setPreloadEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_P
  * not signed in — the app then uses anonymous YouTube access.
  */
 private const val KEY_YT_COOKIE = "youtube_cookie"
+private const val KEY_YT_VISITOR_DATA = "youtube_visitor_data"
+private const val KEY_YT_DATA_SYNC_ID = "youtube_data_sync_id"
+private const val KEY_YT_LOGIN_VERSION = "youtube_login_version"
+private const val YT_LOGIN_VERSION = 2
 fun getYoutubeCookie(c: Context): String = prefs(c).getString(KEY_YT_COOKIE, "").orEmpty()
 fun setYoutubeCookie(c: Context, v: String) = prefs(c).edit().putString(KEY_YT_COOKIE, v).apply()
-fun isYoutubeLoggedIn(c: Context): Boolean = getYoutubeCookie(c).contains("SAPISID")
+fun getYoutubeVisitorData(c: Context): String = prefs(c).getString(KEY_YT_VISITOR_DATA, "").orEmpty()
+fun getYoutubeDataSyncId(c: Context): String = prefs(c).getString(KEY_YT_DATA_SYNC_ID, "").orEmpty()
+
+/** Handles both primary-channel and delegated-channel DATASYNC_ID shapes used by YouTube. */
+fun normalizeYoutubeDataSyncId(value: String): String = when {
+    "||" !in value -> value
+    value.endsWith("||") -> value.substringBefore("||")
+    else -> value.substringAfter("||")
+}
+
+fun setYoutubeLogin(c: Context, cookie: String, visitorData: String = "", dataSyncId: String = "") {
+    prefs(c).edit()
+        .putString(KEY_YT_COOKIE, cookie)
+        .putString(KEY_YT_VISITOR_DATA, visitorData)
+        .putString(KEY_YT_DATA_SYNC_ID, normalizeYoutubeDataSyncId(dataSyncId))
+        .putInt(KEY_YT_LOGIN_VERSION, YT_LOGIN_VERSION)
+        .apply()
+}
+
+fun clearYoutubeLogin(c: Context) {
+    prefs(c).edit()
+        .remove(KEY_YT_COOKIE)
+        .remove(KEY_YT_VISITOR_DATA)
+        .remove(KEY_YT_DATA_SYNC_ID)
+        .remove(KEY_YT_LOGIN_VERSION)
+        .apply()
+}
+
+/** SAPISID is required to sign InnerTube requests; a generic Google cookie is not a login. */
+fun isYoutubeLoggedIn(c: Context): Boolean =
+    prefs(c).getInt(KEY_YT_LOGIN_VERSION, 0) >= YT_LOGIN_VERSION &&
+        getYoutubeCookie(c).split(';').any { it.substringBefore('=').trim() == "SAPISID" }
 
 /**
  * Play audio through Spotify's own web player in a hidden WebView (real Spotify

@@ -101,14 +101,20 @@ fun SpotifyLoginScreen(navController: NavController) {
     val tokenFetchStarted = remember { AtomicBoolean(false) }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
+    // The off-screen full-size playback WebView is attached above Compose. Remove it
+    // while login is visible or it can intercept/draw over this WebView.
+    LaunchedEffect(Unit) {
+        com.music.spotui.di.SpotifyWebPlayer.detach()
+    }
+
     val navigateToHome: () -> Unit = {
-        // The hidden playback WebView was created (logged out) before this login —
-        // reload it with the new session so playback doesn't show Spotify's "Oops".
-        com.music.spotui.di.SpotifyWebPlayer.refreshLogin(context)
-        // First-time users land on the Deezer promo (better/uncensored/faster audio);
-        // returning users who already connected Deezer go straight Home.
-        val dest = if (com.music.spotui.data.preferences.getDeezerArl(context) != null)
-            Routes.Home.route else Routes.DeezerIntro.route
+        com.music.spotui.di.SpotifyWebPlayer.attach(context as Activity)
+        // Spotify owns the catalog; playback source is an explicit next-step choice.
+        val source = com.music.spotui.data.preferences.getPrimaryMusicSource(context)
+        val needsSourceLogin = source == null ||
+            (source == com.music.spotui.data.preferences.MusicSource.YOUTUBE_MUSIC &&
+                !com.music.spotui.data.preferences.isYoutubeLoggedIn(context))
+        val dest = if (needsSourceLogin) Routes.MusicSource.route else Routes.Home.route
         navController.navigate(dest) {
             popUpTo(Routes.Login.route) { inclusive = true }
         }
@@ -166,6 +172,7 @@ fun SpotifyLoginScreen(navController: NavController) {
                         }
                         override fun onPageFinished(view: WebView?, url: String?) {
                             pageReady.set(true)
+                            view?.let(::fixSpotifyLoginLayout)
                         }
                     }
                     loadUrl(SpotifyAuth.LOGIN_URL)
@@ -185,6 +192,28 @@ fun SpotifyLoginScreen(navController: NavController) {
                 fontSize = 15.sp,
             )
         }
+    }
+}
+
+/** Spotify sometimes computes its login <main> at ~48px tall inside WebView. */
+private fun fixSpotifyLoginLayout(webView: WebView) {
+    webView.post {
+        val viewportHeight = webView.height.coerceAtLeast(1)
+        webView.evaluateJavascript(
+            """
+            (function(){
+              var style = document.getElementById('spotui-login-layout-fix');
+              if (!style) {
+                style = document.createElement('style');
+                style.id = 'spotui-login-layout-fix';
+                document.head.appendChild(style);
+              }
+              style.textContent = 'html,body,#__next{height:${viewportHeight}px!important;min-height:${viewportHeight}px!important;}' +
+                'main{height:${viewportHeight}px!important;min-height:${viewportHeight}px!important;max-height:none!important;position:relative!important;overflow:auto!important;}';
+            })();
+            """.trimIndent(),
+            null,
+        )
     }
 }
 

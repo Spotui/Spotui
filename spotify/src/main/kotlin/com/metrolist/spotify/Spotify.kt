@@ -414,6 +414,12 @@ object Spotify {
             artists = artists,
             album = album,
             durationMs = parseGqlTrackDurationMs(trackData),
+            // Spotify's GQL payload nests this value, unlike REST's flat
+            // `explicit` boolean. Without it every GQL track inherited the
+            // model default false and YouTube matching preferred clean edits.
+            explicit = trackData.obj("contentRating")
+                ?.str("label")
+                ?.equals("EXPLICIT", ignoreCase = true) == true,
             uri = uri.ifEmpty { null },
         )
     }

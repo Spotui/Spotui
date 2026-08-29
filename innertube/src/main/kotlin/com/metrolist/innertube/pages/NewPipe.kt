@@ -117,12 +117,44 @@ class NewPipeUtils(
             // Don't print stack trace - caller handles errors
             null
         }
+
+    /** Solve only `s`; n is transformed separately after client-version patching. */
+    fun getSignatureUrl(
+        format: PlayerResponse.StreamingData.Format,
+        videoId: String,
+    ): String? = try {
+        format.url ?: format.signatureCipher?.let { signatureCipher ->
+            val params = parseQueryString(signatureCipher)
+            val obfuscatedSignature = params["s"] ?: return null
+            val signatureParam = params["sp"] ?: "signature"
+            val url = params["url"]?.let(::URLBuilder) ?: return null
+            url.parameters[signatureParam] =
+                YoutubeJavaScriptPlayerManager.deobfuscateSignature(videoId, obfuscatedSignature)
+            url.toString()
+        }
+    } catch (error: Exception) {
+        timber.log.Timber.tag("NewPipeJS").e(
+            error,
+            "signature solve failed for videoId=%s itag=%s",
+            videoId,
+            format.itag,
+        )
+        null
+    }
+
+    fun transformNParam(videoId: String, url: String): String = try {
+        YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(videoId, url)
+    } catch (error: Exception) {
+        timber.log.Timber.tag("NewPipeJS").e(error, "n transform failed for videoId=%s", videoId)
+        url
+    }
 }
 
 object NewPipeExtractor {
     @Volatile private var newPipeDownloader: NewPipeDownloaderImpl? = null
     @Volatile private var newPipeUtils: NewPipeUtils? = null
     @Volatile private var isInitialized = false
+    private val playerJsLock = Any()
 
     @Synchronized
     fun init() {
@@ -139,8 +171,20 @@ object NewPipeExtractor {
 
     fun getSignatureTimestamp(videoId: String): Result<Int> {
         init()
-        return newPipeUtils?.getSignatureTimestamp(videoId)
-            ?: Result.failure(Exception("NewPipeUtils not initialized"))
+        return synchronized(playerJsLock) {
+            newPipeUtils?.getSignatureTimestamp(videoId)
+                ?: Result.failure(Exception("NewPipeUtils not initialized"))
+        }
+    }
+
+    fun getSignatureUrl(format: PlayerResponse.StreamingData.Format, videoId: String): String? {
+        init()
+        return synchronized(playerJsLock) { newPipeUtils?.getSignatureUrl(format, videoId) }
+    }
+
+    fun transformNParam(videoId: String, url: String): String {
+        init()
+        return synchronized(playerJsLock) { newPipeUtils?.transformNParam(videoId, url) ?: url }
     }
 
     fun getStreamUrl(

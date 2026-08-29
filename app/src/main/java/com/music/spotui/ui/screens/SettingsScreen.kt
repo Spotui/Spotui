@@ -57,6 +57,10 @@ import com.music.spotui.data.preferences.setCellularQuality
 import com.music.spotui.data.preferences.setDownloadQuality
 import com.music.spotui.data.preferences.setVideoFallbackEnabled
 import com.music.spotui.data.preferences.setWifiQuality
+import com.music.spotui.data.preferences.MusicSource
+import com.music.spotui.data.preferences.getPrimaryMusicSource
+import com.music.spotui.data.preferences.isYoutubeLoggedIn
+import com.music.spotui.data.preferences.setPrimaryMusicSource
 import com.music.spotui.ui.theme.AppBackground
 import com.music.spotui.ui.theme.AppPalette
 
@@ -73,7 +77,10 @@ fun SettingsScreen(navController: NavController) {
     // Read fresh each composition so returning from the Deezer login reflects it.
     val deezerConnected = com.music.spotui.data.preferences.getDeezerArl(context) != null
     val deezerTier = com.music.spotui.data.preferences.getDeezerTier(context)
-    var deezerEnabled by remember { mutableStateOf(com.music.spotui.data.preferences.isDeezerEnabled(context)) }
+    val youtubeConnected = isYoutubeLoggedIn(context)
+    var primarySource by remember {
+        mutableStateOf(getPrimaryMusicSource(context) ?: MusicSource.YOUTUBE_MUSIC)
+    }
 
     Scaffold(
         containerColor = AppBackground,
@@ -176,23 +183,42 @@ fun SettingsScreen(navController: NavController) {
                 ),
             )
             Spacer(Modifier.height(12.dp))
-            SectionTitle("Deezer")
-            SettingsSwitchRow(
-                title = "Use Deezer",
-                subtitle = "Stream from Deezer first, fall back to YouTube",
-                checked = deezerEnabled,
+            SectionTitle("Music source")
+            SourceSettingRow(
+                title = "YouTube Music",
+                subtitle = if (youtubeConnected) "Connected — explicit and age-restricted playback enabled" else "Login required for explicit and age-restricted songs",
+                selected = primarySource == MusicSource.YOUTUBE_MUSIC,
             ) {
-                deezerEnabled = it
-                com.music.spotui.data.preferences.setDeezerEnabled(context, it)
-                com.music.spotui.di.SongPlayer.deezerEnabled = it
+                if (youtubeConnected) {
+                    primarySource = MusicSource.YOUTUBE_MUSIC
+                    setPrimaryMusicSource(context, primarySource)
+                } else {
+                    navController.navigate(com.music.spotui.ui.navigation.Routes.YouTubeLogin.route)
+                }
+            }
+            SourceSettingRow(
+                title = "Deezer",
+                subtitle = if (deezerConnected) "Connected${if (deezerTier.isNotBlank()) " — $deezerTier" else ""}" else "Not connected",
+                selected = primarySource == MusicSource.DEEZER,
+            ) {
+                if (deezerConnected) {
+                    primarySource = MusicSource.DEEZER
+                    setPrimaryMusicSource(context, primarySource)
+                    com.music.spotui.data.preferences.setDeezerEnabled(context, true)
+                } else {
+                    navController.navigate(com.music.spotui.ui.navigation.Routes.DeezerLogin.route)
+                }
             }
             Text(
-                text = if (deezerConnected) {
-                    "Connected" + if (deezerTier.isNotBlank()) " — $deezerTier" else ""
-                } else "Not connected",
-                color = Color(0xFFB3B3B3),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                text = if (youtubeConnected) "Reconnect YouTube Music" else "Log in to YouTube Music",
+                color = AppPalette,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { navController.navigate(com.music.spotui.ui.navigation.Routes.YouTubeLogin.route) }
+                    .padding(vertical = 12.dp),
             )
             Text(
                 text = if (deezerConnected) "Reconnect / switch account" else "Log in to Deezer",
@@ -277,6 +303,31 @@ fun SettingsScreen(navController: NavController) {
                     .padding(vertical = 14.dp)
             )
             Spacer(Modifier.height(40.dp))
+        }
+    }
+}
+
+@Composable
+private fun SourceSettingRow(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .background(if (selected) Color(0xFF1A1A20) else Color.Transparent)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, color = Color(0xFFB3B3B3), fontSize = 12.sp)
+        }
+        if (selected) {
+            Icon(Icons.Filled.Check, contentDescription = "Selected", tint = AppPalette, modifier = Modifier.size(20.dp))
         }
     }
 }

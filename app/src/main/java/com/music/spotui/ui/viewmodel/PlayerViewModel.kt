@@ -226,11 +226,11 @@ class PlayerViewModel @Inject constructor(private val currentSongState: CurrentS
                     }
                     delay(250L)
                 }
-                // Radio never arrived (offline / no seed id) — loop like before.
-                val first = queueSongs.first()
+                // Radio never arrived — stop cleanly instead of looping the same
+                // track again (issue 1: song replayed itself when repeat was off).
                 withContext(Dispatchers.Main) {
-                    updateSongState(first.coverUri, first.title, first.singer, true, first.id, 0, first.album)
-                    SongPlayer.playSong(first.url, context)
+                    SongPlayer.stop()
+                    currentSongState.updatePlayingState(false)
                 }
             } finally {
                 awaitingRadioContinue = false

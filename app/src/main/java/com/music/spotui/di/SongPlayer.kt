@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.SongItem
@@ -12,6 +14,7 @@ import com.metrolist.music.constants.AudioQuality
 import com.metrolist.music.utils.YTPlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -120,10 +123,15 @@ object SongPlayer {
         val title: String,
         val artist: String,
         val album: String,
+        val isrc: String = "",
     )
 
     private val metadataRegistry =
         java.util.concurrent.ConcurrentHashMap<String, TrackMatchMetadata>()
+    // GQL track objects do not consistently carry the explicit flag. Keep this
+    // separate from explicitRegistry so the model's default `false` is not
+    // mistaken for a confirmed clean track.
+    private val spotifyMetadataRepaired = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** Register query→Spotify metadata pairs for strict YouTube result scoring. */
     fun registerMetadata(pairs: List<Pair<String, TrackMatchMetadata>>) {
@@ -246,6 +254,9 @@ object SongPlayer {
                             appContext, "Couldn't find a playable stream for this track",
                             android.widget.Toast.LENGTH_SHORT,
                         ).show()
+                        // Signal failure so the queue can advance past this track
+                        // instead of going silent (issue 3: playlist stalls on bad stream).
+                        onStreamFailed?.invoke(song)
                     }
                     return@launch
                 }
@@ -363,7 +374,19 @@ object SongPlayer {
                     "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
             )
             .setAllowCrossProtocolRedirects(true)
-        val upstream = androidx.media3.datasource.DefaultDataSource.Factory(context, http)
+        val baseUpstream = androidx.media3.datasource.DefaultDataSource.Factory(context, http)
+        val resolvedUpstream = androidx.media3.datasource.ResolvingDataSource.Factory(baseUpstream) { dataSpec ->
+            val url = dataSpec.uri.toString()
+            if (url.contains("googlevideo.com")) {
+                dataSpec.withAdditionalHeaders(
+                    com.metrolist.innertube.models.YouTubeClient.forStreamUrl(url).mediaHeaders(),
+                )
+            } else dataSpec
+        }
+        val upstream = com.music.spotui.playback.ChunkedDataSource.Factory(
+            resolvedUpstream,
+            2L * 1024 * 1024,
+        )
         return androidx.media3.datasource.cache.CacheDataSource.Factory()
             .setCache(mediaCache(context))
             .setUpstreamDataSourceFactory(upstream)
@@ -435,14 +458,27 @@ object SongPlayer {
             }
             return android.net.Uri.fromFile(java.io.File(path)).toString()
         }
-        streamCache[song]?.let {
+        streamCache[song]?.let { cachedUrl ->
+            // Source choices take effect immediately; never let a URL cached under the
+            // previous choice silently keep using that provider.
+            val cachedSource = sourceCache[song]
+            val selectedSource = com.music.spotui.data.preferences.getPrimaryMusicSource(appContext)
+            val sourceStillSelected = when (cachedSource) {
+                "Deezer" -> selectedSource == com.music.spotui.data.preferences.MusicSource.DEEZER
+                "YouTube" -> selectedSource != com.music.spotui.data.preferences.MusicSource.DEEZER
+                else -> true // local, downloaded, alternative and lossless sources are independent
+            }
+            if (!sourceStillSelected) {
+                invalidateResolvedStream(song)
+            } else {
             // Cache hits must still update the badge — returning early kept the
             // previous track's label (e.g. "Downloaded") on a streamed track.
-            if (forPlayback) {
-                currentSource = sourceCache[song] ?: "YouTube"
-                currentQuality = qualityCache[song] ?: ""
+                if (forPlayback) {
+                    currentSource = cachedSource ?: "YouTube"
+                    currentQuality = qualityCache[song] ?: ""
+                }
+                return cachedUrl
             }
-            return it
         }
         // Quality for the current network (Wi-Fi vs cellular), from Settings.
         val quality = com.music.spotui.data.preferences.currentStreamingQuality(appContext)
@@ -455,7 +491,11 @@ object SongPlayer {
             val spotifyId = trackIdRegistry[song] ?: spotifyTrackIdForPlayback(song)
             val r = kotlinx.coroutines.withTimeoutOrNull(12_000) {
                 com.music.spotui.deezer.DeezerSource.resolve(
-                    appContext, spotifyId = spotifyId, isrc = null, searchQuery = searchTextForPlayback(song),
+                    appContext,
+                    spotifyId = spotifyId,
+                    isrc = null,
+                    searchQuery = searchTextForPlayback(song),
+                    expectedDurationSec = (durationRegistry[song] ?: 0) / 1000,
                 )
             }
             if (r is com.music.spotui.deezer.DeezerSource.Result.Success) {
@@ -547,6 +587,10 @@ object SongPlayer {
         java.util.concurrent.ConcurrentHashMap<String, Boolean>()
     )
     @Volatile var onDownloadsChanged: (() -> Unit)? = null
+
+    /** Fired (main thread) when a stream can't be resolved for [song], so the caller
+     *  can skip to the next track instead of leaving playback silent. */
+    @Volatile var onStreamFailed: ((String) -> Unit)? = null
 
     // Per-query download progress, 0..100. Present only while a download is active.
     private val downloadProgress = java.util.concurrent.ConcurrentHashMap<String, Int>()
@@ -804,6 +848,7 @@ object SongPlayer {
             spotifyId = song.spotifyTrackId.takeIf { it.isNotBlank() },
             isrc = null,
             searchQuery = listOf(song.title, song.singer).filter { it.isNotBlank() }.joinToString(" "),
+            expectedDurationSec = if (song.durationMs > 0) song.durationMs / 1000 else 0,
         )
 
     private fun downloadDeezerRaw(
@@ -1112,7 +1157,8 @@ object SongPlayer {
         val hasUsefulMeta = currentMeta?.let {
             it.title.isNotBlank() && it.artist.isNotBlank() && it.album.isNotBlank()
         } ?: false
-        if (hasUsefulMeta && durationRegistry[query] != null && explicitRegistry.containsKey(query)) {
+        if (hasUsefulMeta && durationRegistry[query] != null && explicitRegistry.containsKey(query) &&
+            spotifyMetadataRepaired.contains(query)) {
             return currentMeta
         }
 
@@ -1126,11 +1172,13 @@ object SongPlayer {
             title = track.name,
             artist = track.artists.joinToString(", ") { it.name },
             album = track.album?.name ?: currentMeta?.album.orEmpty(),
+            isrc = track.isrc.orEmpty(),
         )
         metadataRegistry[query] = repaired
         trackIdRegistry[query] = spotifyId
         explicitRegistry[query] = track.explicit
         if (track.durationMs > 0) durationRegistry[query] = track.durationMs
+        spotifyMetadataRepaired += query
         return repaired
     }
 
@@ -1141,12 +1189,33 @@ object SongPlayer {
         val searchText = searchTextForPlayback(query)
         // A raw YouTube videoId is 11 chars with no spaces — accept it directly.
         if (searchText.length == 11 && !searchText.contains(' ')) return listOf(searchText)
-        val hits = YouTube.search(searchText, filter)
-            .onFailure { Log.w(TAG, "resolveVideoId: YouTube search failed for: $searchText", it) }
-            .getOrNull()
-            ?.items
-            ?.filterIsInstance<SongItem>()
-            .orEmpty()
+        val exactMeta = ensureSpotifyMatchMetadata(query)
+        val wantExplicit = explicitRegistry[query]
+
+        suspend fun searchSongs(text: String): List<SongItem> {
+            val firstPage = YouTube.search(text, filter)
+                .onFailure { Log.w(TAG, "resolveVideoId: YouTube search failed for: $text", it) }
+                .getOrNull() ?: return emptyList()
+            val found = firstPage.items.filterIsInstance<SongItem>().toMutableList()
+
+            // The explicit edition is often just below the clean edition. Walk two
+            // continuation pages before accepting that YouTube Music has no match.
+            var continuation = firstPage.continuation
+            repeat(2) {
+                if (wantExplicit != true || found.any { it.explicit } || continuation == null) return@repeat
+                val next = YouTube.searchContinuation(continuation!!).getOrNull() ?: return@repeat
+                found += next.items.filterIsInstance<SongItem>()
+                continuation = next.continuation
+            }
+            return found
+        }
+
+        val searchQueries = buildList {
+            if (wantExplicit == true && !exactMeta?.isrc.isNullOrBlank()) add(exactMeta!!.isrc)
+            add(searchText)
+            if (wantExplicit == true) add("$searchText explicit")
+        }.distinct()
+        val hits = searchQueries.flatMap { searchSongs(it) }.distinctBy { it.id }
         if (hits.isEmpty()) {
             Log.w(TAG, "resolveVideoId: no YouTube song results for: $searchText")
             return emptyList()
@@ -1160,7 +1229,6 @@ object SongPlayer {
         // length, so it never ties the real track once duration is in the score.
         fun norm(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
         val qn = norm(searchText)
-        val exactMeta = ensureSpotifyMatchMetadata(query)
         val wantSec = durationRegistry[query]?.let { it / 1000 }
         val scored = hits.map { h ->
             val cleanTitle = norm(h.title.substringBefore('(').substringBefore('['))
@@ -1185,12 +1253,18 @@ object SongPlayer {
             val durOk = wantSec != null && d != null && kotlin.math.abs(d - wantSec) <= 4
             return artistOk || durOk
         }
-        val wantExplicit = explicitRegistry[query]
+        fun isRequestedEdition(item: SongItem): Boolean = when (wantExplicit) {
+            true -> item.explicit || (filter == YouTube.SearchFilter.FILTER_VIDEO &&
+                Regex("\\b(explicit|uncensored)\\b", RegexOption.IGNORE_CASE).containsMatchIn(item.title))
+            false -> !item.explicit
+            null -> true
+        }
         fun explicitFirst(list: List<SongItem>) =
             if (wantExplicit != null) list.sortedByDescending { it.explicit == wantExplicit } else list
         val ordered = if (transferScored.isNotEmpty()) {
             val accepted = transferScored
                 .filter { it.isAcceptableMatch() }
+                .filter { isRequestedEdition(it.item) }
                 .sortedWith(
                     compareByDescending<CandidateScore> { it.item.explicit == wantExplicit || wantExplicit == null }
                         .thenByDescending { it.score }
@@ -1222,7 +1296,9 @@ object SongPlayer {
                 .filter { !verified(it.first) }
                 .sortedByDescending { it.second }
                 .map { it.first }
-            (explicitFirst(verifiedRanked) + explicitFirst(restRanked)).distinctBy { it.id }
+            (explicitFirst(verifiedRanked) + explicitFirst(restRanked))
+                .filter(::isRequestedEdition)
+                .distinctBy { it.id }
         }
 
         if (ordered.isEmpty()) return emptyList()
@@ -1344,7 +1420,50 @@ object SongPlayer {
             val (p, filter) = createPlayerWithFilter(context, handleAudioFocus = true)
             player = p
             currentPlayerFilter = filter
+            p.addListener(midPlayErrorListener)
             onPlayerCreated?.invoke(p)
+        }
+    }
+
+    /**
+     * Catches ExoPlayer errors that happen mid-stream (expired CDN URL, network drop,
+     * HTTP 403/404, decode failure, etc.) — none of which were previously handled,
+     * so the player would silently go idle.
+     *
+     * IO errors (2xxx) get one re-resolve attempt: the cached URL is discarded and a
+     * fresh one is fetched; if that succeeds we resume from where we left off.
+     * Non-IO errors (decode, DRM, etc.) skip straight to the next track.
+     */
+    private val midPlayErrorListener = object : Player.Listener {
+        override fun onPlayerError(error: PlaybackException) {
+            val song = currentRequest.takeIf { it.isNotBlank() } ?: return
+            Log.w(TAG, "mid-play error for $song: ${error.errorCodeName} (code ${error.errorCode})")
+            // Drop the cached URL — it may have expired (Deezer CDN, YouTube signing).
+            streamCache.remove(song)
+            sourceCache.remove(song)
+            val ctx = appCtx ?: run { onStreamFailed?.invoke(song); return }
+            val isIoError = error.errorCode in 2000..2999
+            scope.launch {
+                if (isIoError) {
+                    // Brief wait so a transient network blip has time to recover.
+                    delay(3_000L)
+                    // User may have manually skipped while we were waiting — bail if so.
+                    if (currentRequest != song) return@launch
+                    val fresh = resolveStreamUrl(song, ctx, forPlayback = true)
+                    if (fresh != null && currentRequest == song) {
+                        val savedPos = withContext(Dispatchers.Main) { player?.currentPosition ?: 0L }
+                        withContext(Dispatchers.Main) {
+                            player?.setMediaItem(buildMediaItem(fresh, streamMimeType(fresh)))
+                            player?.prepare()
+                            if (savedPos > 5_000L) player?.seekTo(savedPos)
+                            player?.play()
+                        }
+                        return@launch
+                    }
+                }
+                // Non-IO error or re-resolve failed — advance to the next track.
+                withContext(Dispatchers.Main) { onStreamFailed?.invoke(song) }
+            }
         }
     }
 
@@ -1465,6 +1584,8 @@ object SongPlayer {
     @Volatile private var isCrossfading = false
     @Volatile private var crossfadeJob: kotlinx.coroutines.Job? = null
     @Volatile private var positionWatchJob: kotlinx.coroutines.Job? = null
+    @Volatile private var pendingNextSong: com.music.spotui.data.entity.SongsModel? = null
+    @Volatile private var pendingNextSongIdx: Int = 0
 
     /** Notified (on the main thread) when the active ExoPlayer instance changes after a
      *  crossfade, so the media session can re-bind to the promoted player. */
@@ -1496,6 +1617,7 @@ object SongPlayer {
         secondaryPlayerFilter = null
         player?.volume = 1f
         isCrossfading = false
+        pendingNextSong = null
     }
 
     /** (Re)start the loop that watches playback position and fires a crossfade as the
@@ -1559,14 +1681,13 @@ object SongPlayer {
                 val effectiveMs = minOf(configuredMs.toLong(), remaining).coerceAtLeast(1000L).toInt()
                 val djMode = com.music.spotui.data.preferences.isCrossfadeDjMode(ctx)
 
+                // Stash for finalizeCrossfade, which updates the UI when the new track
+                // is the sole audio source (not at blend-start while the old track fades).
+                pendingNextSong = nextSong
+                pendingNextSongIdx = cur + 1
+                // Pre-load metadata so buildMediaItem() tags the secondary player correctly.
+                setNowPlayingMeta(nextSong.title, nextSong.singer, nextSong.coverUri)
                 withContext(Dispatchers.Main) {
-                    // Advance the app's now-playing state immediately so the in-app UI follows
-                    // the incoming track during the blend. Also sets the now-playing meta used
-                    // to tag the secondary player's MediaItem.
-                    state.updateSongState(
-                        nextSong.coverUri, nextSong.title, nextSong.singer, true,
-                        nextSong.id, cur + 1, nextSong.album,
-                    )
                     val (sp, sf) = createPlayerWithFilter(ctx, handleAudioFocus = false)
                     secondaryPlayer = sp
                     secondaryPlayerFilter = sf
@@ -1640,6 +1761,16 @@ object SongPlayer {
             incoming.setHandleAudioBecomingNoisy(true)
             runCatching { old?.stop(); old?.release() }
             isCrossfading = false
+            // Now that the new track is the sole audio source, switch the in-app UI
+            // (cover art, canvas, title) and update the playback identity for error recovery.
+            pendingNextSong?.let { next ->
+                currentRequest = next.url
+                boundState?.updateSongState(
+                    next.coverUri, next.title, next.singer, true,
+                    next.id, pendingNextSongIdx, next.album,
+                )
+                pendingNextSong = null
+            }
             // Re-bind the media session to the new player.
             onPlayerSwapped?.invoke(incoming)
         }

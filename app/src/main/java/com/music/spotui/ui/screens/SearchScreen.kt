@@ -6,6 +6,7 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.music.spotui.ui.components.SongOptionsSheet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -114,6 +116,16 @@ fun SumUpSearchScreen(
     var recents by remember {
         mutableStateOf(com.music.spotui.data.preferences.getRecentItems(context))
     }
+    var menuSong by remember { mutableStateOf<SongsModel?>(null) }
+    menuSong?.let { sel ->
+        SongOptionsSheet(
+            song = sel,
+            navController = navController,
+            context = context,
+            onDismiss = { menuSong = null },
+        )
+    }
+
     val recordRecent: (com.music.spotui.data.preferences.RecentItem) -> Unit = { item ->
         com.music.spotui.data.preferences.addRecentItem(context, item)
         recents = com.music.spotui.data.preferences.getRecentItems(context)
@@ -242,7 +254,7 @@ fun SumUpSearchScreen(
                 when (val row = mixed[i]) {
                     is SearchRow.Song -> SearchSongRow(row.song, searchedList, searchViewModel, onPlayed = {
                         recordRecent(row.song.toRecentItem())
-                    })
+                    }, onLongClick = { menuSong = row.song })
                     is SearchRow.Artist -> SearchArtistRow(row.artist) {
                         recordRecent(com.music.spotui.data.preferences.RecentItem(
                             type = "artist",
@@ -287,7 +299,7 @@ fun SumUpSearchScreen(
                     val ep = results.episodes[i]
                     SearchSongRow(ep, results.episodes, searchViewModel, onPlayed = {
                         recordRecent(ep.toRecentItem())
-                    })
+                    }, onLongClick = { menuSong = ep })
                 }
             }
         }
@@ -393,13 +405,14 @@ fun RecentItemRow(
 }
 
 @RequiresApi(Build.VERSION_CODES.S)
-@OptIn(ExperimentalGlideComposeApi::class)
+@OptIn(ExperimentalGlideComposeApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun SearchSongRow(
     song: SongsModel,
     songList: List<SongsModel>,
     searchViewModel: SearchViewModel,
     onPlayed: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var isLiked by remember { mutableStateOf(isSongLiked(context, song.id.toString())) }
@@ -414,25 +427,27 @@ fun SearchSongRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp, 8.dp)
-            .clickable(
+            .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) {
-                onPlayed()
-                // Start a radio from the tapped track (queue = this song + Spotify
-                // recommendations) rather than queuing the whole search list.
-                searchViewModel.startRadioFromSong(song)
-                SongPlayer.playSong(song.url, context)
-                searchViewModel.updateSongState(
-                    song.coverUri,
-                    song.title,
-                    song.singer,
-                    true,
-                    song.id,
-                    0,
-                    song.album,
-                )
-            },
+                onLongClick = onLongClick,
+                onClick = {
+                    onPlayed()
+                    // Start a radio from the tapped track (queue = this song + Spotify
+                    // recommendations) rather than queuing the whole search list.
+                    searchViewModel.startRadioFromSong(song)
+                    SongPlayer.playSong(song.url, context)
+                    searchViewModel.updateSongState(
+                        song.coverUri,
+                        song.title,
+                        song.singer,
+                        true,
+                        song.id,
+                        0,
+                        song.album,
+                    )
+                },
+            ),
     ) {
         Row(
             horizontalArrangement = Arrangement.Start,

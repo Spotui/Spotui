@@ -146,12 +146,16 @@ class InnerTube {
             append("X-Goog-Api-Format-Version", "1")
             append("X-YouTube-Client-Name", client.clientId /* Not a typo. The Client-Name header does contain the client id. */)
             append("X-YouTube-Client-Version", client.clientVersion)
-            append("X-Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
-            append("Referer", YouTubeClient.REFERER_YOUTUBE_MUSIC)
+            client.origin?.let {
+                append("Origin", it)
+                append("X-Origin", it)
+                append("Referer", "$it/")
+            }
             visitorData?.let { append("X-Goog-Visitor-Id", it) }
             if (setLogin && client.loginSupported) {
                 cookie?.let { cookie ->
                     append("cookie", cookie)
+                    append("X-Goog-AuthUser", "0")
                     if ("SAPISID" !in cookieMap) return@let
                     val currentTime = System.currentTimeMillis() / 1000
                     val sapisidHash = sha1("$currentTime ${cookieMap["SAPISID"]} ${YouTubeClient.ORIGIN_YOUTUBE_MUSIC}")
@@ -201,7 +205,7 @@ class InnerTube {
                     context = client.toContext(
                         locale,
                         visitorData,
-                        if (useLoginForBrowse) dataSyncId else null
+                        null,
                     ),
                     query = query,
                     params = params
@@ -218,12 +222,18 @@ class InnerTube {
         playlistId: String?,
         signatureTimestamp: Int?,
         poToken: String? = null,
+        authenticated: Boolean = false,
     ) = withRetry {
-        httpClient.post("player") {
-            ytClient(client, setLogin = true)
+        httpClient.post(client.playerApiUrl) {
+            // BitChord's critical distinction: native clients are anonymous.
+            // Cookies belong only on a browser-shaped authenticated fallback.
+            ytClient(client, setLogin = authenticated)
             setBody(
                 PlayerBody(
-                    context = client.toContext(locale, visitorData, dataSyncId).let {
+                    // BitChord authenticates with Cookie + SAPISIDHASH only. A
+                    // delegated onBehalfOfUser id can bind this request to the
+                    // wrong channel and is intentionally omitted.
+                    context = client.toContext(locale, visitorData, null).let {
                         if (client.isEmbedded) {
                             it.copy(
                                 thirdParty = Context.ThirdParty(
@@ -250,6 +260,14 @@ class InnerTube {
     }
 
     suspend fun getSwJsData() = withRetry { httpClient.get("https://music.youtube.com/sw.js_data") }
+
+    /** Authenticated endpoint used to reject incomplete/stale cookie captures. */
+    suspend fun accountMenu(client: YouTubeClient) = withRetry {
+        httpClient.post("account/account_menu") {
+            ytClient(client, setLogin = true)
+            setBody(AccountMenuBody(client.toContext(locale, visitorData, null)))
+        }
+    }
 
     
     private suspend fun returnYouTubeDislike(videoId: String) = withRetry {

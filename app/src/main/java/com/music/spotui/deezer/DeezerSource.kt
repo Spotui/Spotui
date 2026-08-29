@@ -60,6 +60,7 @@ object DeezerSource {
         spotifyId: String?,
         isrc: String? = null,
         searchQuery: String? = null,
+        expectedDurationSec: Int = 0,
     ): Resolved? = withContext(Dispatchers.IO) {
         val arl = getDeezerArl(context) ?: return@withContext null
         DeezerSession.setArl(arl)
@@ -70,7 +71,7 @@ object DeezerSource {
         val effectiveIsrc = isrc?.takeIf { it.isNotBlank() }
             ?: spotifyId?.let { runCatching { Spotify.track(it).getOrNull()?.isrc }.getOrNull() }
         val deezerId = effectiveIsrc?.let { DeezerSession.deezerIdForIsrc(it) }
-            ?: searchQuery?.takeIf { it.isNotBlank() }?.let { DeezerSession.searchTrackId(it) }
+            ?: searchQuery?.takeIf { it.isNotBlank() }?.let { DeezerSession.searchTrackId(it, expectedDurationSec) }
             ?: return@withContext null
 
         val tokens = DeezerSession.trackTokens(deezerId) ?: return@withContext null
@@ -105,9 +106,10 @@ object DeezerSource {
         spotifyId: String?,
         isrc: String? = null,
         searchQuery: String? = null,
+        expectedDurationSec: Int = 0,
     ): Result {
         if (getDeezerArl(context) == null) return Result.NotLoggedIn
-        val raw = resolveRaw(context, spotifyId, isrc, searchQuery) ?: return Result.NotFound
+        val raw = resolveRaw(context, spotifyId, isrc, searchQuery, expectedDurationSec) ?: return Result.NotFound
         val uri = "deezer://stream" +
             "?u=${URLEncoder.encode(raw.url, "UTF-8")}" +
             "&id=${raw.trackId}" +

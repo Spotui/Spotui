@@ -22,7 +22,19 @@ data class YouTubeClient(
     val useSignatureTimestamp: Boolean = false,
     val isEmbedded: Boolean = false,
     val useWebPoTokens: Boolean = false,
+    /** Browser origin; native clients deliberately send neither Origin nor Referer. */
+    val origin: String? = null,
 ) {
+    val referer: String? get() = origin?.let { "$it/" }
+    val usesMusicHost: Boolean get() = origin == ORIGIN_YOUTUBE_MUSIC
+    val playerApiUrl: String
+        get() = (if (usesMusicHost) API_URL_YOUTUBE_MUSIC else API_URL_YOUTUBE) + "player"
+
+    fun mediaHeaders(): Map<String, String> = buildMap {
+        put("User-Agent", userAgent)
+        origin?.let { put("Origin", it) }
+        referer?.let { put("Referer", it) }
+    }
     fun toContext(locale: YouTubeLocale, visitorData: String?, dataSyncId: String?) = Context(
         client = Context.Client(
             clientName = clientName,
@@ -42,11 +54,12 @@ data class YouTubeClient(
     )
 
     companion object {
-        const val USER_AGENT_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+        const val USER_AGENT_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
 
         const val ORIGIN_YOUTUBE_MUSIC = "https://music.youtube.com"
         const val REFERER_YOUTUBE_MUSIC = "$ORIGIN_YOUTUBE_MUSIC/"
         const val API_URL_YOUTUBE_MUSIC = "$ORIGIN_YOUTUBE_MUSIC/youtubei/v1/"
+        const val API_URL_YOUTUBE = "https://www.youtube.com/youtubei/v1/"
 
         val WEB = YouTubeClient(
             clientName = "WEB",
@@ -57,12 +70,13 @@ data class YouTubeClient(
 
         val WEB_REMIX = YouTubeClient(
             clientName = "WEB_REMIX",
-            clientVersion = "1.20260213.01.00",
+            clientVersion = "1.20260707.12.00",
             clientId = "67",
             userAgent = USER_AGENT_WEB,
             loginSupported = true,
             useSignatureTimestamp = true,
             useWebPoTokens = true,
+            origin = ORIGIN_YOUTUBE_MUSIC,
         )
 
         val WEB_CREATOR = YouTubeClient(
@@ -73,17 +87,16 @@ data class YouTubeClient(
             loginSupported = true,
             loginRequired = true,
             useSignatureTimestamp = true,
+            useWebPoTokens = true,
+            origin = ORIGIN_YOUTUBE_MUSIC,
         )
 
         val TVHTML5 = YouTubeClient(
             clientName = "TVHTML5",
-            clientVersion = "7.20260213.00.00",
+            clientVersion = "7.20260707.07.00",
             clientId = "7",
             userAgent = "Mozilla/5.0(SMART-TV; Linux; Tizen 4.0.0.2) AppleWebkit/605.1.15 (KHTML, like Gecko) SamsungBrowser/9.2 TV Safari/605.1.15",
-            loginSupported = true,
-            loginRequired = true,
-            useSignatureTimestamp = true,
-            useWebPoTokens = true,
+            origin = "https://www.youtube.com",
         )
 
         /**
@@ -103,20 +116,66 @@ data class YouTubeClient(
 
         val IOS = YouTubeClient(
             clientName = "IOS",
-            clientVersion = "21.03.1",
+            clientVersion = "21.26.4",
             clientId = "5",
-            userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
-            osVersion = "18.2.22C152",
+            userAgent = "com.google.ios.youtube/21.26.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+            osName = "iPhone",
+            osVersion = "18.3.2.22D82",
+            deviceMake = "Apple",
+            deviceModel = "iPhone16,2",
+        )
+
+        val IOS_RECENT = IOS.copy(
+            clientVersion = "21.29.1",
+            userAgent = "com.google.ios.youtube/21.29.1 (iPhone16,2; U; CPU iOS 18_5 like Mac OS X;)",
+            osVersion = "18.5.22F70",
+        )
+
+        val ANDROID_MUSIC = YouTubeClient(
+            clientName = "ANDROID_MUSIC",
+            clientVersion = "8.39.42",
+            clientId = "21",
+            userAgent = "com.google.android.apps.youtube.music/8.39.42 (Linux; U; Android 15; en_US; Pixel 9 Pro; Build/AP4A.250205.002) gzip",
+            osName = "Android",
+            osVersion = "15",
+            deviceMake = "Google",
+            deviceModel = "Pixel 9 Pro",
+            androidSdkVersion = "35",
         )
 
         val MOBILE = YouTubeClient(
             clientName = "ANDROID",
-            clientVersion = "21.03.38",
+            clientVersion = "21.26.364",
             clientId = "3",
-            userAgent = "com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip",
-            loginSupported = true,
-            useSignatureTimestamp = true
+            userAgent = "com.google.android.youtube/21.26.364 (Linux; U; Android 15; en_US; Pixel 9 Pro; Build/AP4A.250205.002; Cronet/132.0.6834.79) gzip",
+            osName = "Android",
+            osVersion = "15",
+            deviceMake = "Google",
+            deviceModel = "Pixel 9 Pro",
+            androidSdkVersion = "35",
+            useSignatureTimestamp = true,
         )
+
+        /** Match a googlevideo URL to the identity that minted it. */
+        fun forStreamUrl(url: String): YouTubeClient {
+            val query = runCatching { java.net.URI(url).rawQuery }.getOrNull().orEmpty()
+            val params = query.split('&').mapNotNull {
+                val index = it.indexOf('=')
+                if (index <= 0) null else it.substring(0, index) to
+                    java.net.URLDecoder.decode(it.substring(index + 1), "UTF-8")
+            }.toMap()
+            val name = params["c"]?.uppercase().orEmpty()
+            val version = params["cver"]
+            return when {
+                name == "ANDROID_MUSIC" -> ANDROID_MUSIC
+                name == "ANDROID_VR" -> if (version == ANDROID_VR_1_43_32.clientVersion) ANDROID_VR_1_43_32 else ANDROID_VR_1_65_10
+                name.startsWith("ANDROID") -> MOBILE
+                name.startsWith("IOS") -> if (version == IOS_RECENT.clientVersion) IOS_RECENT else IOS
+                name.startsWith("TVHTML5") -> TVHTML5
+                name == "WEB_REMIX" -> WEB_REMIX
+                else -> IOS
+            }
+        }
 
         /**
          * Video not playable: Paid / Movie / Private / Age-restricted.
@@ -162,6 +221,22 @@ data class YouTubeClient(
             friendlyName = "Android VR 1.61",
             loginSupported = false,
             useSignatureTimestamp = false
+        )
+
+        /** Current whole-file-capable Android VR client used by Meld/yt-dlp. */
+        val ANDROID_VR_1_65_10 = YouTubeClient(
+            clientName = "ANDROID_VR",
+            clientVersion = "1.65.10",
+            clientId = "28",
+            userAgent = "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+            osName = "Android",
+            osVersion = "12L",
+            deviceMake = "Oculus",
+            deviceModel = "Quest 3",
+            androidSdkVersion = "32",
+            friendlyName = "Android VR 1.65",
+            loginSupported = false,
+            useSignatureTimestamp = false,
         )
 
         /**

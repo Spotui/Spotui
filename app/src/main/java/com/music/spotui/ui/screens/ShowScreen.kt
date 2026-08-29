@@ -1,7 +1,9 @@
 package com.music.spotui.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -23,7 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.bumptech.glide.integration.compose.ExperimentalGlideComposeApi
+import com.music.spotui.data.entity.SongsModel
+import com.music.spotui.ui.components.SongOptionsSheet
 import com.bumptech.glide.integration.compose.GlideImage
 import com.bumptech.glide.integration.compose.placeholder
 import com.music.spotui.R
@@ -47,7 +53,7 @@ import com.music.spotui.ui.components.Loader
 import com.music.spotui.ui.theme.AppBackground
 import com.music.spotui.ui.viewmodel.ShowViewModel
 
-@OptIn(ExperimentalGlideComposeApi::class)
+@OptIn(ExperimentalGlideComposeApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ShowScreen(navController: NavController, showId: String, showName: String = "") {
     val vm: ShowViewModel = hiltViewModel()
@@ -57,6 +63,16 @@ fun ShowScreen(navController: NavController, showId: String, showName: String = 
     val episodesState by vm.episodes.collectAsState()
     val show by vm.show.collectAsState()
     val episodes = (episodesState as? Response.Success)?.data.orEmpty()
+
+    var menuSong by remember { mutableStateOf<SongsModel?>(null) }
+    menuSong?.let { sel ->
+        SongOptionsSheet(
+            song = sel,
+            navController = navController,
+            context = context,
+            onDismiss = { menuSong = null },
+        )
+    }
 
     LazyColumn(
         contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 130.dp),
@@ -116,14 +132,16 @@ fun ShowScreen(navController: NavController, showId: String, showName: String = 
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(
+                    .combinedClickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) {
-                        vm.updateQueue(listOf(ep))
-                        SongPlayer.playSong(ep.url, context)
-                        vm.updateSongState(ep.coverUri, ep.title, ep.singer, true, ep.id, 0, ep.album)
-                    }
+                        onLongClick = { menuSong = ep },
+                        onClick = {
+                            vm.updateQueue(listOf(ep))
+                            SongPlayer.playSong(ep.url, context)
+                            vm.updateSongState(ep.coverUri, ep.title, ep.singer, true, ep.id, 0, ep.album)
+                        },
+                    )
                     .padding(16.dp, 10.dp),
             ) {
                 GlideImage(

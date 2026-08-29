@@ -2,6 +2,10 @@ package com.music.spotui.ui.screens
 
 import android.annotation.SuppressLint
 import androidx.compose.foundation.ExperimentalFoundationApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -179,12 +183,35 @@ fun DownloadsScreen(navController: NavController) {
                     )
                 }
 
-                // ── Clear all action (per-song Export lives in the ⋯ menu) ──
+                // ── Bulk actions: Export all / Clear all ──
                 if (songs.isNotEmpty()) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(20.dp, 0.dp, 20.dp, 8.dp),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
                     ) {
+                        Text(
+                            text = "Export all",
+                            color = Color(AppPalette.toArgb()),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Color(0xFF1A1A20))
+                                .clickable {
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        val (n, dest) = com.music.spotui.data.preferences.exportDownloads(context)
+                                        withContext(Dispatchers.Main) {
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                if (n > 0) "Exported $n track${if (n == 1) "" else "s"} to $dest"
+                                                else dest,
+                                                android.widget.Toast.LENGTH_LONG,
+                                            ).show()
+                                        }
+                                    }
+                                }
+                                .padding(horizontal = 18.dp, vertical = 10.dp),
+                        )
                         Text(
                             text = "Clear all",
                             color = Color(0xFFE57373),

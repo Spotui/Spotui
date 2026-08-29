@@ -108,6 +108,15 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
         )
     }
 
+    // 0 = playlist order, 1 = title A-Z, 2 = title Z-A, 3 = artist A-Z
+    var sortOrder by remember { mutableStateOf(0) }
+    val displaySongs = when (sortOrder) {
+        1 -> songs.sortedBy { it.title.lowercase() }
+        2 -> songs.sortedByDescending { it.title.lowercase() }
+        3 -> songs.sortedBy { it.singer.lowercase() }
+        else -> songs
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxSize()
@@ -207,6 +216,39 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                             )
                         }
 
+                        if (songs.isNotEmpty()) {
+                            val sortLabels = listOf("Custom order", "Title A-Z", "Title Z-A", "Artist")
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp, 0.dp, 20.dp, 2.dp),
+                            ) {
+                                Text(
+                                    text = sortLabels[sortOrder],
+                                    color = if (sortOrder == 0) Color.Gray else Color(AppPalette.toArgb()),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { sortOrder = (sortOrder + 1) % 4 },
+                                )
+                                Spacer(Modifier.width(2.dp))
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = if (sortOrder == 0) Color.Gray else Color(AppPalette.toArgb()),
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) { sortOrder = (sortOrder + 1) % 4 },
+                                )
+                            }
+                        }
+
                         Row(
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically,
@@ -252,7 +294,7 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
                                         ) {
-                                            playlistViewModel.startShuffled(songs)?.let { first ->
+                                            playlistViewModel.startShuffled(displaySongs)?.let { first ->
                                                 SongPlayer.playSong(first.url, context)
                                                 playlistViewModel.updateSongState(
                                                     first.coverUri,
@@ -288,14 +330,14 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                                 songs.any { it.id == playlistViewModel.currentSongId.value } ->
                                                     playlistViewModel.setPlaying(true)
                                                 else -> {
-                                                    playlistViewModel.updateQueue(songs)
-                                                    SongPlayer.playSong(songs[0].url, context)
+                                                    playlistViewModel.updateQueue(displaySongs)
+                                                    SongPlayer.playSong(displaySongs[0].url, context)
                                                     playlistViewModel.updateSongState(
-                                                        songs[0].coverUri,
-                                                        songs[0].title,
-                                                        songs[0].singer,
+                                                        displaySongs[0].coverUri,
+                                                        displaySongs[0].title,
+                                                        displaySongs[0].singer,
                                                         true,
-                                                        songs[0].id,
+                                                        displaySongs[0].id,
                                                         0,
                                                         playlist.name
                                                     )
@@ -317,7 +359,7 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                     }
                 }
 
-                itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
+                itemsIndexed(displaySongs, key = { _, song -> song.id }) { index, song ->
                     val currentColor = if (song.id == playlistViewModel.currentSongId.value)
                         Color(AppPalette.toArgb()) else Color.White
 
@@ -332,7 +374,7 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                 indication = null,
                                 onLongClick = { menuSong = song },
                                 onClick = {
-                                    playlistViewModel.updateQueue(songs)
+                                    playlistViewModel.updateQueue(displaySongs)
                                     SongPlayer.playSong(song.url, context)
                                     playlistViewModel.updateSongState(
                                         song.coverUri,

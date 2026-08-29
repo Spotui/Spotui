@@ -79,11 +79,31 @@ internal object DeezerSession {
         json.optString("id").takeIf { it.isNotBlank() && !json.has("error") }
     }.getOrNull()
 
-    /** Fallback lookup: best Deezer track match for a free-text "title artist". */
-    fun searchTrackId(query: String): String? = runCatching {
+    /**
+     * Fallback lookup: best Deezer track match for a free-text "title artist".
+     * When [expectedDurationSec] > 0, fetches up to 5 candidates and picks the one
+     * whose duration is closest — rejecting any match more than 10 seconds off to
+     * avoid landing on a remix, cover, or entirely wrong track.
+     */
+    fun searchTrackId(query: String, expectedDurationSec: Int = 0): String? = runCatching {
+        val limit = if (expectedDurationSec > 0) 5 else 1
         val enc = URLEncoder.encode(query, "UTF-8")
-        val json = callPublicApi("search/track?q=$enc&limit=1")
-        json.optJSONArray("data")?.optJSONObject(0)?.optString("id")?.takeIf { it.isNotBlank() }
+        val json = callPublicApi("search/track?q=$enc&limit=$limit")
+        val data = json.optJSONArray("data") ?: return@runCatching null
+        if (expectedDurationSec <= 0 || data.length() == 0) {
+            return@runCatching data.optJSONObject(0)?.optString("id")?.takeIf { it.isNotBlank() }
+        }
+        // Deezer search results include "duration" in seconds — pick the closest match.
+        var bestId: String? = null
+        var bestDelta = Int.MAX_VALUE
+        for (i in 0 until data.length()) {
+            val obj = data.getJSONObject(i)
+            val id = obj.optString("id").takeIf { it.isNotBlank() } ?: continue
+            val dur = obj.optInt("duration", 0)
+            val delta = kotlin.math.abs(dur - expectedDurationSec)
+            if (delta < bestDelta) { bestDelta = delta; bestId = id }
+        }
+        if (bestDelta > 10) null else bestId // reject covers / remixes more than 10 s off
     }.getOrNull()
 
     /** Fetch the private stream token + CDN origin for a Deezer track id. */

@@ -83,11 +83,11 @@ fun SpotiflacVerifyScreen(navController: NavController, next: String = "") {
                                 android.widget.Toast.makeText(
                                     context, "SpotiFLAC session captured", android.widget.Toast.LENGTH_LONG,
                                 ).show()
-                                // Onboarding (Spotify → Deezer → SpotiFLAC) lands Home;
+                                // Onboarding (Spotify → music source → SpotiFLAC) lands Home;
                                 // reached from Settings we just return where we came from.
                                 if (next == "home") {
                                     navController.navigate(Routes.Home.route) {
-                                        popUpTo(Routes.DeezerIntro.route) { inclusive = true }
+                                        popUpTo(Routes.MusicSource.route) { inclusive = true }
                                     }
                                 } else {
                                     navController.popBackStack()

@@ -24,6 +24,8 @@ import com.music.spotui.ui.screens.ArtistScreen
 import com.music.spotui.ui.screens.CategoryScreen
 import com.music.spotui.ui.screens.DeezerLoginScreen
 import com.music.spotui.ui.screens.DeezerIntroScreen
+import com.music.spotui.ui.screens.MusicSourceScreen
+import com.music.spotui.ui.screens.YouTubeLoginScreen
 import com.music.spotui.ui.screens.LocalFilesScreen
 import com.music.spotui.ui.screens.SpotiflacVerifyScreen
 import com.music.spotui.ui.screens.DownloadsScreen
@@ -58,10 +60,13 @@ fun MyNavHost(
 
     val context = LocalContext.current
     // First launch (no Spotify session) lands on the login screen.
-    val startDestination = if (SpotifySession.spDc(context).isBlank()) {
-        Routes.Login.route
-    } else {
-        Routes.Home.route
+    val startDestination = when {
+        SpotifySession.spDc(context).isBlank() -> Routes.Login.route
+        com.music.spotui.data.preferences.getPrimaryMusicSource(context) == null -> Routes.MusicSource.route
+        com.music.spotui.data.preferences.getPrimaryMusicSource(context) ==
+            com.music.spotui.data.preferences.MusicSource.YOUTUBE_MUSIC &&
+            !com.music.spotui.data.preferences.isYoutubeLoggedIn(context) -> Routes.MusicSource.route
+        else -> Routes.Home.route
     }
 
     // Restore the last session: put the track back into the mini player (paused)
@@ -182,6 +187,25 @@ fun MyNavHost(
                 bottomBarPlayerState.value = playerState != ""
             }
             DeezerIntroScreen(navHostController)
+        }
+
+        composable(Routes.MusicSource.route) {
+            LaunchedEffect(Unit) {
+                bottomBarState.value = false
+                bottomBarPlayerState.value = false
+            }
+            MusicSourceScreen(navHostController)
+        }
+
+        composable(
+            "${Routes.YouTubeLogin.route}?next={next}",
+            arguments = listOf(navArgument("next") { defaultValue = "" }),
+        ) { entry ->
+            LaunchedEffect(Unit) {
+                bottomBarState.value = false
+                bottomBarPlayerState.value = false
+            }
+            YouTubeLoginScreen(navHostController, entry.arguments?.getString("next").orEmpty())
         }
 
         composable(Routes.LocalFiles.route){

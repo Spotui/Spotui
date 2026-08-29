@@ -92,8 +92,8 @@ object YouTube {
         )
     }
 
-    suspend fun player(videoId: String, playlistId: String? = null, client: YouTubeClient, signatureTimestamp: Int? = null, poToken: String? = null): Result<PlayerResponse> = runCatching {
-        innerTube.player(client, videoId, playlistId, signatureTimestamp, poToken).body<PlayerResponse>()
+    suspend fun player(videoId: String, playlistId: String? = null, client: YouTubeClient, signatureTimestamp: Int? = null, poToken: String? = null, authenticated: Boolean = false): Result<PlayerResponse> = runCatching {
+        innerTube.player(client, videoId, playlistId, signatureTimestamp, poToken, authenticated).body<PlayerResponse>()
     }
 
     suspend fun visitorData(): Result<String> = runCatching {
@@ -106,6 +106,16 @@ object YouTube {
                 } ?: false
             }
             .jsonPrimitive.content
+    }
+
+    /**
+     * Validates that the current cookie/session tuple resolves an active YouTube account.
+     * A 200 response alone is not enough: the endpoint can return a signed-out menu.
+     */
+    suspend fun validateLogin(): Result<Boolean> = runCatching {
+        val body = innerTube.accountMenu(WEB_REMIX).bodyAsText()
+        body.contains("activeAccountHeaderRenderer") ||
+            (body.contains("accountName") && !body.contains("Sign in"))
     }
 
     @JvmInline

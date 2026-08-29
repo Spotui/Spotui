@@ -27,7 +27,9 @@ fun clearDeezer(context: Context) {
 
 /** Deezer is used when the user has logged in and hasn't turned it off. */
 fun isDeezerEnabled(context: Context): Boolean =
-    getDeezerArl(context) != null && prefs(context).getBoolean(KEY_ENABLED, true)
+    getDeezerArl(context) != null &&
+        prefs(context).getBoolean(KEY_ENABLED, true) &&
+        getPrimaryMusicSource(context) == MusicSource.DEEZER
 
 fun setDeezerEnabled(context: Context, enabled: Boolean) {
     prefs(context).edit().putBoolean(KEY_ENABLED, enabled).apply()

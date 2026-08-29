@@ -21,7 +21,7 @@ class PoTokenGenerator {
     private var webPoTokenGenerator: PoTokenWebView? = null
 
     fun getWebClientPoToken(videoId: String, sessionId: String): PoTokenResult? {
-        Timber.tag(TAG).d("getWebClientPoToken called: videoId=$videoId, sessionId=$sessionId")
+        Timber.tag(TAG).d("getWebClientPoToken called: videoId=$videoId, visitorDataPresent=${sessionId.isNotBlank()}")
         Timber.tag(TAG).d("WebView state: supported=$webViewSupported, badImpl=$webViewBadImpl")
         if (!webViewSupported || webViewBadImpl) {
             Timber.tag(TAG).d("WebView not available: supported=$webViewSupported, badImpl=$webViewBadImpl")
@@ -50,7 +50,7 @@ class PoTokenGenerator {
      * [PoTokenWebView.generatePoToken] was called
      */
     private suspend fun getWebClientPoToken(videoId: String, sessionId: String, forceRecreate: Boolean): PoTokenResult {
-        Timber.tag(TAG).d("Web poToken requested: videoId=$videoId, sessionId=$sessionId")
+        Timber.tag(TAG).d("Web poToken requested: videoId=$videoId")
 
         val (poTokenGenerator, streamingPot, hasBeenRecreated) =
             webPoTokenGenLock.withLock {
@@ -71,7 +71,7 @@ class PoTokenGenerator {
                     // The streaming poToken needs to be generated exactly once before generating
                     // any other (player) tokens.
                     webPoTokenStreamingPot = webPoTokenGenerator!!.generatePoToken(webPoTokenSessionId!!)
-                    Timber.tag(TAG).d("Streaming poToken generated for sessionId=${webPoTokenSessionId?.take(20)}...")
+                    Timber.tag(TAG).d("Streaming poToken generated")
                 }
 
                 Triple(webPoTokenGenerator!!, webPoTokenStreamingPot!!, shouldRecreate)
@@ -93,8 +93,11 @@ class PoTokenGenerator {
             }
         }
 
-        Timber.tag(TAG).d("poToken generated successfully: player=${playerPot.take(20)}..., streaming=${streamingPot.take(20)}...")
+        Timber.tag(TAG).d("poToken pair generated successfully")
 
-        return PoTokenResult(playerPot, streamingPot)
+        return PoTokenResult(
+            playerRequestPoToken = streamingPot,
+            streamingDataPoToken = playerPot,
+        )
     }
 }

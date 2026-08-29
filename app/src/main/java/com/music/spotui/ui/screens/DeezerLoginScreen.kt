@@ -32,6 +32,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavController
 import com.music.spotui.data.preferences.setDeezerArl
 import com.music.spotui.data.preferences.setDeezerTier
+import com.music.spotui.data.preferences.MusicSource
+import com.music.spotui.data.preferences.setPrimaryMusicSource
 import com.music.spotui.deezer.DeezerSession
 import com.music.spotui.ui.navigation.Routes
 import kotlinx.coroutines.Dispatchers
@@ -77,22 +79,20 @@ fun DeezerLoginScreen(navController: NavController, next: String = "") {
                         else -> "Free (MP3 128)"
                     }
                     setDeezerTier(context, tier)
+                    setPrimaryMusicSource(context, MusicSource.DEEZER)
                     withContext(Dispatchers.Main) {
                         statusMessage = "Signed in — $tier"
                         delay(400)
-                        if (next == "home") {
-                            // Onboarding order is Spotify → Deezer → SpotiFLAC: hand off
-                            // to the SpotiFLAC verification step next (unless already set
-                            // up), keeping DeezerIntro underneath so it lands Home after.
-                            if (com.music.spotui.data.preferences.hasSpotiflacSession(context)) {
-                                navController.navigate(Routes.Home.route) {
-                                    popUpTo(Routes.DeezerIntro.route) { inclusive = true }
-                                }
-                            } else {
+                        when (next) {
+                            "spotiflac" -> {
                                 navController.navigate("${Routes.SpotiflacVerify.route}?next=home")
                             }
-                        } else {
-                            navController.popBackStack()
+                            "home" -> {
+                                navController.navigate(Routes.Home.route) {
+                                    popUpTo(Routes.MusicSource.route) { inclusive = true }
+                                }
+                            }
+                            else -> navController.popBackStack()
                         }
                     }
                 }

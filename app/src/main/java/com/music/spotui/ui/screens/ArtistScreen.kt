@@ -1,9 +1,11 @@
 package com.music.spotui.ui.screens
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.music.spotui.ui.components.SongOptionsSheet
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -113,6 +116,16 @@ private fun ArtistOverviewContent(
     val context = LocalContext.current
     val tracks = overview.topTracks
     val displayName = overview.name.ifBlank { artistName }
+
+    var menuSong by remember { mutableStateOf<com.music.spotui.data.entity.SongsModel?>(null) }
+    menuSong?.let { sel ->
+        SongOptionsSheet(
+            song = sel,
+            navController = navController,
+            context = context,
+            onDismiss = { menuSong = null },
+        )
+    }
 
     // Warm the stream cache for the top tracks so the first tap plays instantly.
     LaunchedEffect(tracks) {
@@ -314,7 +327,11 @@ private fun ArtistOverviewContent(
                 )
             }
             itemsIndexed(tracks.take(5)) { index, item ->
-                PopularTrackRow(item, index, artistViewModel) { playTrackAt(index) }
+                PopularTrackRow(
+                    item, index, artistViewModel,
+                    onLongClick = { menuSong = item.song },
+                    onPlay = { playTrackAt(index) },
+                )
             }
         }
 
@@ -411,12 +428,13 @@ private fun ArtistOverviewContent(
     }
 }
 
-@OptIn(ExperimentalGlideComposeApi::class)
+@OptIn(ExperimentalGlideComposeApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun PopularTrackRow(
     item: ArtistTrackUi,
     index: Int,
     artistViewModel: ArtistViewModel,
+    onLongClick: (() -> Unit)? = null,
     onPlay: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -432,10 +450,12 @@ private fun PopularTrackRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp, 6.dp)
-            .clickable(
+            .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-            ) { onPlay() },
+                onLongClick = onLongClick,
+                onClick = onPlay,
+            ),
     ) {
         Text(
             text = "${index + 1}",

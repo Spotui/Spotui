@@ -142,7 +142,7 @@ class PoTokenWebView private constructor(
      */
     @JavascriptInterface
     fun onRunBotguardResult(botguardResponse: String) {
-        Timber.tag(TAG).d("botguardResponse: $botguardResponse")
+        Timber.tag(TAG).d("BotGuard response received")
         makeBotguardServiceRequest(
             "https://www.youtube.com/api/jnn/v1/GenerateIT",
             "[ \"$REQUEST_KEY\", \"$botguardResponse\" ]",
@@ -150,7 +150,7 @@ class PoTokenWebView private constructor(
             Timber.tag(TAG).d("GenerateIT response: $responseBody")
             try {
                 val (integrityToken, expirationTimeInSeconds) = parseIntegrityTokenData(responseBody)
-                Timber.tag(TAG).d("Parsed integrityToken (${integrityToken.take(50)}...), expires in $expirationTimeInSeconds sec")
+                Timber.tag(TAG).d("Parsed integrity token; expires in $expirationTimeInSeconds sec")
 
                 // leave 10 minutes of margin just to be sure
                 expirationInstant = Instant.now().plusSeconds(expirationTimeInSeconds).minus(10, ChronoUnit.MINUTES)
@@ -196,7 +196,7 @@ class PoTokenWebView private constructor(
     suspend fun generatePoToken(identifier: String): String {
         return withContext(Dispatchers.Main) {
             suspendCancellableCoroutine { cont ->
-                Timber.tag(TAG).d("generatePoToken() called with identifier $identifier")
+                Timber.tag(TAG).d("generatePoToken() called")
                 addPoTokenEmitter(identifier, cont)
                 // NOTE: obtainPoToken is now async, so we use .then()
                 webView.evaluateJavascript(
@@ -236,7 +236,6 @@ class PoTokenWebView private constructor(
      */
     @JavascriptInterface
     fun onObtainPoTokenResult(identifier: String, poTokenU8: String) {
-        Timber.tag(TAG).d("Generated poToken (before decoding): identifier=$identifier poTokenU8=$poTokenU8")
         val poToken = try {
             u8ToBase64(poTokenU8)
         } catch (t: Throwable) {
@@ -244,7 +243,7 @@ class PoTokenWebView private constructor(
             return
         }
 
-        Timber.tag(TAG).d("Generated poToken: identifier=$identifier poToken=$poToken")
+        Timber.tag(TAG).d("Generated poToken successfully")
         popPoTokenContinuation(identifier)?.resume(poToken)
     }
 

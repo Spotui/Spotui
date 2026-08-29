@@ -310,7 +310,9 @@ object SpotifyWebPlayer {
         this.positionMs = positionMs.coerceIn(0, dur)
     }
 
-    fun release() {
+    /** Remove the hidden player so it cannot cover an interactive login WebView. */
+    fun detach() {
+        pollHandler.removeCallbacks(pollRunnable)
         webView?.let { wv ->
             wv.post {
                 runCatching {
@@ -322,7 +324,12 @@ object SpotifyWebPlayer {
         }
         webView = null
         pageReady = false
+        canPlay = false
+        commandReady = false
+        activated = false
     }
+
+    fun release() = detach()
 
     private fun eval(js: String) {
         val wv = webView ?: return
