@@ -18,6 +18,7 @@ import javax.inject.Inject
 class LikedSongsViewModel @Inject constructor(
     private val repository: AppRepository,
     private val currentSongState: CurrentSongState,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
 
     private val _songs = MutableStateFlow<Response<List<SongsModel>>>(Response.Loading())
@@ -42,8 +43,14 @@ class LikedSongsViewModel @Inject constructor(
     }
 
     init {
+        val cached = com.music.spotui.data.preferences.getCachedLikedSongs(context)
+        if (cached.isNotEmpty()) _songs.value = Response.Success(cached)
+
         viewModelScope.launch(Dispatchers.IO) {
-            repository.provideLikedSongs().collect { _songs.value = it }
+            repository.provideLikedSongs().collect {
+                if (it is Response.Error && _songs.value is Response.Success) return@collect
+                _songs.value = it
+            }
         }
     }
 

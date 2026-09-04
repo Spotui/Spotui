@@ -346,14 +346,31 @@ fun SumUpLibraryScreen(
                         indication = null
                     ) { openLibraryEntry(entry, navController) }
             ) {
-                GlideImage(
-                    modifier = Modifier
-                        .size(55.dp)
-                        .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
-                    model = entry.coverUri,
-                    contentScale = ContentScale.Crop,
-                    contentDescription = ""
-                )
+                if (entry.spotifyId == Api.HomeCache.DOWNLOADS_ID) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(55.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF2E7D32)),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                } else {
+                    GlideImage(
+                        modifier = Modifier
+                            .size(55.dp)
+                            .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
+                        model = entry.coverUri,
+                        contentScale = ContentScale.Crop,
+                        contentDescription = ""
+                    )
+                }
                 Column(modifier = Modifier.padding(start = 12.dp)) {
                     Text(text = entry.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(text = entry.subtitle, color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -492,15 +509,33 @@ fun LibraryGridScreen(
                     indication = null
                 ) { openLibraryEntry(entry, navController) }
             ) {
-                GlideImage(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
-                    model = entry.coverUri,
-                    contentScale = ContentScale.Crop,
-                    contentDescription = ""
-                )
+                if (entry.spotifyId == Api.HomeCache.DOWNLOADS_ID) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF2E7D32)),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp),
+                        )
+                    }
+                } else {
+                    GlideImage(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
+                        model = entry.coverUri,
+                        contentScale = ContentScale.Crop,
+                        contentDescription = ""
+                    )
+                }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = entry.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(text = entry.subtitle, color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)

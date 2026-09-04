@@ -325,19 +325,32 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null
                                         ) {
+                                            val isOnline = com.music.spotui.data.preferences.isNetworkAvailable(context)
+                                            val playableSongs = if (isOnline) displaySongs else displaySongs.filter {
+                                                com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
+                                                com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
+                                            }
+                                            if (playableSongs.isEmpty()) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "No downloaded songs available in this playlist",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                                return@clickable
+                                            }
                                             when {
                                                 playing -> playlistViewModel.setPlaying(false)
-                                                songs.any { it.id == playlistViewModel.currentSongId.value } ->
+                                                playableSongs.any { it.id == playlistViewModel.currentSongId.value } ->
                                                     playlistViewModel.setPlaying(true)
                                                 else -> {
-                                                    playlistViewModel.updateQueue(displaySongs)
-                                                    SongPlayer.playSong(displaySongs[0].url, context)
+                                                    playlistViewModel.updateQueue(playableSongs)
+                                                    SongPlayer.playSong(playableSongs[0].url, context)
                                                     playlistViewModel.updateSongState(
-                                                        displaySongs[0].coverUri,
-                                                        displaySongs[0].title,
-                                                        displaySongs[0].singer,
+                                                        playableSongs[0].coverUri,
+                                                        playableSongs[0].title,
+                                                        playableSongs[0].singer,
                                                         true,
-                                                        displaySongs[0].id,
+                                                        playableSongs[0].id,
                                                         0,
                                                         playlist.name
                                                     )
@@ -360,8 +373,20 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                 }
 
                 itemsIndexed(displaySongs, key = { _, song -> song.id }) { index, song ->
-                    val currentColor = if (song.id == playlistViewModel.currentSongId.value)
-                        Color(AppPalette.toArgb()) else Color.White
+                    val isDownloaded = remember(song.id) {
+                        com.music.spotui.data.preferences.isDownloaded(context, song.id.toString()) ||
+                        com.music.spotui.data.preferences.downloadedPathForQuery(context, song.url) != null
+                    }
+                    val isOnline = remember { com.music.spotui.data.preferences.isNetworkAvailable(context) }
+                    val isPlayable = isOnline || isDownloaded
+
+                    val isCurrent = song.id == playlistViewModel.currentSongId.value
+                    val currentColor = when {
+                        isCurrent -> Color(AppPalette.toArgb())
+                        !isPlayable -> Color(0xFF666666)
+                        else -> Color.White
+                    }
+                    val subtitleColor = if (!isPlayable) Color(0xFF444444) else Color.Gray
 
                     Row(
                         horizontalArrangement = Arrangement.Start,
@@ -374,15 +399,28 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                 indication = null,
                                 onLongClick = { menuSong = song },
                                 onClick = {
-                                    playlistViewModel.updateQueue(displaySongs)
+                                    if (!isPlayable) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Download this song to play it offline",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@combinedClickable
+                                    }
+                                    val playableQueue = if (isOnline) displaySongs else displaySongs.filter {
+                                        com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
+                                        com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
+                                    }
+                                    playlistViewModel.updateQueue(playableQueue)
                                     SongPlayer.playSong(song.url, context)
+                                    val targetIdx = playableQueue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                                     playlistViewModel.updateSongState(
                                         song.coverUri,
                                         song.title,
                                         song.singer,
                                         true,
                                         song.id,
-                                        index,
+                                        targetIdx,
                                         playlist.name
                                     )
                                 },
@@ -405,13 +443,23 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1
                             )
-                            Text(
-                                text = song.singer,
-                                color = Color.Gray,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isDownloaded) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_download),
+                                        contentDescription = "Downloaded",
+                                        tint = Color(AppPalette.toArgb()),
+                                        modifier = Modifier.size(12.dp).padding(end = 3.dp)
+                                    )
+                                }
+                                Text(
+                                    text = song.singer,
+                                    color = subtitleColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }

@@ -468,6 +468,22 @@ fun SumUpAlbumScreen(
 
                     val currentPlayingIndicatorColor = if(songId == albumViewModel.currentSongId.value) Color(AppPalette.toArgb()) else Color.White
 
+                    val songItem = albumSongs[song]
+                    val isDownloaded = remember(songItem.id) {
+                        com.music.spotui.data.preferences.isDownloaded(context, songItem.id.toString()) ||
+                        com.music.spotui.data.preferences.downloadedPathForQuery(context, songItem.url) != null
+                    }
+                    val isOnline = remember { com.music.spotui.data.preferences.isNetworkAvailable(context) }
+                    val isPlayable = isOnline || isDownloaded
+
+                    val isCurrent = songId == albumViewModel.currentSongId.value
+                    val titleColor = when {
+                        isCurrent -> Color(AppPalette.toArgb())
+                        !isPlayable -> Color(0xFF666666)
+                        else -> Color.White
+                    }
+                    val subColor = if (!isPlayable) Color(0xFF444444) else Color.Gray
+
                     Row(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
@@ -477,17 +493,30 @@ fun SumUpAlbumScreen(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onLongClick = { menuSong = albumSongs[song] },
+                                onLongClick = { menuSong = songItem },
                                 onClick = {
-                                    albumViewModel.updateQueue(albumSongs)
-                                    SongPlayer.playSong(albumSongs[song].url, context)
+                                    if (!isPlayable) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Download this song to play it offline",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@combinedClickable
+                                    }
+                                    val playableQueue = if (isOnline) albumSongs else albumSongs.filter {
+                                        com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
+                                        com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
+                                    }
+                                    albumViewModel.updateQueue(playableQueue)
+                                    SongPlayer.playSong(songItem.url, context)
+                                    val targetIdx = playableQueue.indexOfFirst { it.id == songItem.id }.coerceAtLeast(0)
                                     albumViewModel.updateSongState(
-                                        albumSongs[song].coverUri,
-                                        albumSongs[song].title,
-                                        albumSongs[song].singer,
+                                        songItem.coverUri,
+                                        songItem.title,
+                                        songItem.singer,
                                         true,
-                                        albumSongs[song].id,
-                                        song,
+                                        songItem.id,
+                                        targetIdx,
                                         albumName
                                     )
                                 },
@@ -499,29 +528,33 @@ fun SumUpAlbumScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f).padding(end = 12.dp)
                         ) {
-//                        GlideImage(
-//                            modifier = Modifier.size(60.dp),
-//                            model = albumSongs[song].coverUri,
-//                            contentScale = ContentScale.Crop,
-//                            contentDescription = ""
-//                        )
                             Column {
                                 Text(
-                                    text = albumSongs[song].title,
-                                    color = currentPlayingIndicatorColor,
+                                    text = songItem.title,
+                                    color = titleColor,
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
                                     maxLines = 1,
                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = albumSongs[song].singer,
-                                    color = Color.Gray,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (isDownloaded) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.ic_download),
+                                            contentDescription = "Downloaded",
+                                            tint = Color(AppPalette.toArgb()),
+                                            modifier = Modifier.size(12.dp).padding(end = 3.dp)
+                                        )
+                                    }
+                                    Text(
+                                        text = songItem.singer,
+                                        color = subColor,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
 

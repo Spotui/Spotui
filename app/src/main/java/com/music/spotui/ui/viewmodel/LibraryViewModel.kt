@@ -48,6 +48,13 @@ class LibraryViewModel @Inject constructor(
 
     fun load() = viewModelScope.launch(Dispatchers.IO) {
         repository.provideLibrary().collect { response ->
+            if (response is Response.Error) {
+                // When offline / error, preserve cached entries if available instead of blowing away the UI
+                val cached = getCachedLibraryEntries(context)
+                if (cached.isNotEmpty() || _entries.value is Response.Success) {
+                    return@collect
+                }
+            }
             _entries.value = response
             if (response is Response.Success) cacheLibraryEntries(context, response.data)
         }

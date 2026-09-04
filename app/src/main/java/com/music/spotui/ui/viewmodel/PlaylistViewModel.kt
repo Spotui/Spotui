@@ -19,6 +19,7 @@ import javax.inject.Inject
 class PlaylistViewModel @Inject constructor(
     private val repository: AppRepository,
     private val currentSongState: CurrentSongState,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
 
     val currentSongPlayingState: State<Boolean> get() = currentSongState.playingState
@@ -57,11 +58,22 @@ class PlaylistViewModel @Inject constructor(
     fun loadPlaylist(playlistId: String) {
         if (playlistKey == playlistId) return
         playlistKey = playlistId
+        val cachedAlbum = com.music.spotui.data.preferences.getCachedPlaylistAlbum(context, playlistId)
+        if (cachedAlbum != null) _playlist.value = Response.Success(cachedAlbum)
+        val cachedSongs = com.music.spotui.data.preferences.getCachedPlaylistSongs(context, playlistId)
+        if (cachedSongs.isNotEmpty()) _songs.value = Response.Success(cachedSongs)
+
         viewModelScope.launch(Dispatchers.IO) {
-            repository.providePlaylist(playlistId).collect { _playlist.value = it }
+            repository.providePlaylist(playlistId).collect {
+                if (it is Response.Error && _playlist.value is Response.Success) return@collect
+                _playlist.value = it
+            }
         }
         viewModelScope.launch(Dispatchers.IO) {
-            repository.providePlaylistSongs(playlistId).collect { _songs.value = it }
+            repository.providePlaylistSongs(playlistId).collect {
+                if (it is Response.Error && _songs.value is Response.Success) return@collect
+                _songs.value = it
+            }
         }
     }
 }

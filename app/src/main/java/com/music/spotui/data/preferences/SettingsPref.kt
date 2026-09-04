@@ -128,6 +128,13 @@ fun setCrossfadeMs(c: Context, ms: Int) =
 
 fun isCrossfadeEnabled(c: Context): Boolean = getCrossfadeMs(c) > 0
 
+fun isNetworkAvailable(context: Context): Boolean = runCatching {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+    val net = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(net) ?: return false
+    caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}.getOrDefault(false)
+
 /** DJ-style mixing: low-pass the outgoing track and high-pass the incoming one during the blend. */
 fun isCrossfadeDjMode(c: Context): Boolean = prefs(c).getBoolean(KEY_CROSSFADE_DJ, false)
 fun setCrossfadeDjMode(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_CROSSFADE_DJ, v).apply()

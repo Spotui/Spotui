@@ -158,8 +158,16 @@ class Api @Inject constructor(
      */
     suspend fun getHomeFeed(): Flow<Response<HomeFeedModel>> = flow {
         HomeCache.home?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
+        val persistentCache = com.music.spotui.data.preferences.getCachedHomeFeed(context)
+        if (persistentCache != null && HomeCache.home == null) {
+            HomeCache.home = persistentCache
+            emit(Response.Success(persistentCache))
+        }
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            if (HomeCache.home == null) emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            if (HomeCache.home == null) {
+                if (persistentCache != null) emit(Response.Success(persistentCache))
+                else emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            }
             return@flow
         }
         Spotify.home(sectionItemsLimit = 20).fold(
@@ -177,11 +185,15 @@ class Api @Inject constructor(
                 }.distinctBy { it.title.lowercase().ifBlank { it.hashCode().toString() } }
                 val model = HomeFeedModel(greeting = feed.greeting ?: "", sections = sections)
                 HomeCache.home = model
+                com.music.spotui.data.preferences.cacheHomeFeed(context, model)
                 emit(Response.Success(model))
             },
             onFailure = {
                 Log.e("Api", "getHomeFeed failed", it)
-                if (HomeCache.home == null) emit(Response.Error(it.message ?: "error"))
+                if (HomeCache.home == null) {
+                    if (persistentCache != null) emit(Response.Success(persistentCache))
+                    else emit(Response.Error(it.message ?: "error"))
+                }
             },
         )
     }
@@ -307,15 +319,20 @@ class Api @Inject constructor(
     suspend fun getRecommendations(seedTrackIds: List<String>): List<SongsModel> {
         val seeds = seedTrackIds.filter { it.isNotBlank() }.distinct()
         if (seeds.isEmpty()) return emptyList()
-        if (!SpotifyTokenProvider.ensureToken(context)) return emptyList()
         val seedId = seeds.last()
+        val cachedRadio = com.music.spotui.data.preferences.getCachedRadioSongs(context, seedId)
+        if (!SpotifyTokenProvider.ensureToken(context)) return cachedRadio
         // Primary: the exact radio the Spotify web player queues after this track —
         // the inspiredby-mix station playlist. This IS Spotify's real queue, so the
         // continuation matches what open.spotify.com would play next.
         Spotify.trackRadio(seedId).getOrNull()
             ?.filter { it.id != seedId }
             ?.takeIf { it.isNotEmpty() }
-            ?.let { radio -> return radio.map { it.toSongModel() } }
+            ?.let { radio ->
+                val list = radio.map { it.toSongModel() }
+                com.music.spotui.data.preferences.cacheRadioSongs(context, seedId, list)
+                return list
+            }
         Log.w("Api", "track radio empty — trying native recommender")
         // Fallback 1: Spotify's own recommender (the SEO "recommended tracks" GQL op).
         // Still Spotify's real backend, so it beats any local heuristic when available.
@@ -495,8 +512,16 @@ class Api @Inject constructor(
         if (albumName.isBlank()) {
             emit(Response.Success(emptyList())); return@flow
         }
+        val cacheKey = "$albumName|$artist"
+        val cached = com.music.spotui.data.preferences.getCachedAlbumSongs(context, cacheKey)
+        if (cached.isNotEmpty()) {
+            emit(Response.Success(cached))
+        }
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            emit(Response.Error("Spotify not authenticated — set sp_dc cookie")); return@flow
+            if (cached.isEmpty()) {
+                emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            }
+            return@flow
         }
         // Two albums can share a name (different artists). Search the name and,
         // when we know the artist, pick the candidate whose artists match instead
@@ -508,11 +533,16 @@ class Api @Inject constructor(
         ).getOrNull()?.albums?.items.orEmpty()
         val albumId = pickAlbum(candidates, albumName, artist)?.id
         if (albumId.isNullOrBlank()) {
-            emit(Response.Success(emptyList())); return@flow
+            if (cached.isEmpty()) emit(Response.Success(emptyList()))
+            return@flow
         }
         Spotify.album(albumId).fold(
-            onSuccess = { full -> emit(Response.Success(full.tracks?.items.orEmpty().map { it.toSongModel() })) },
-            onFailure = { Log.e("Api", "getAlbumSongs failed", it); emit(Response.Error(it.message ?: "error")) },
+            onSuccess = { full ->
+                val songs = full.tracks?.items.orEmpty().map { it.toSongModel() }
+                com.music.spotui.data.preferences.cacheAlbumData(context, cacheKey, songs)
+                emit(Response.Success(songs))
+            },
+            onFailure = { Log.e("Api", "getAlbumSongs failed", it); if (cached.isEmpty()) emit(Response.Error(it.message ?: "error")) },
         )
     }
 
@@ -527,14 +557,20 @@ class Api @Inject constructor(
         if (playlistId.isBlank()) {
             emit(Response.Success(emptyList())); return@flow
         }
+        val cached = com.music.spotui.data.preferences.getCachedPlaylistSongs(context, playlistId)
+        if (cached.isNotEmpty()) {
+            emit(Response.Success(cached))
+        }
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            emit(Response.Error("Spotify not authenticated — set sp_dc cookie")); return@flow
+            if (cached.isEmpty()) {
+                emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            }
+            return@flow
         }
         Spotify.playlistTracks(playlistId, limit = 100).fold(
             onSuccess = { first ->
                 val songs = first.items.mapNotNull { it.track?.toSongModel() }.toMutableList()
-                // Show the first page right away, then keep paging until the
-                // playlist's full track count is loaded.
+                com.music.spotui.data.preferences.cachePlaylistData(context, playlistId, null, songs)
                 emit(Response.Success(songs.toList()))
                 var offset = first.items.size
                 while (offset < first.total && first.items.isNotEmpty()) {
@@ -542,10 +578,11 @@ class Api @Inject constructor(
                     if (page.items.isEmpty()) break
                     songs += page.items.mapNotNull { it.track?.toSongModel() }
                     offset += page.items.size
+                    com.music.spotui.data.preferences.cachePlaylistData(context, playlistId, null, songs)
                     emit(Response.Success(songs.toList()))
                 }
             },
-            onFailure = { Log.e("Api", "getPlaylistSongs failed", it); emit(Response.Error(it.message ?: "error")) },
+            onFailure = { Log.e("Api", "getPlaylistSongs failed", it); if (cached.isEmpty()) emit(Response.Error(it.message ?: "error")) },
         )
     }
 
@@ -576,7 +613,38 @@ class Api @Inject constructor(
     suspend fun getLibrary(): Flow<Response<List<com.music.spotui.data.entity.LibraryEntry>>> = flow {
         HomeCache.library?.let { emit(Response.Success(it)) } ?: emit(Response.Loading())
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            if (HomeCache.library == null) emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            val cached = com.music.spotui.data.preferences.getCachedLibraryEntries(context)
+            if (cached.isNotEmpty()) {
+                val withDownloads = if (cached.any { it.spotifyId == DOWNLOADS_ID }) cached
+                else listOf(com.music.spotui.data.entity.LibraryEntry(
+                    spotifyId = DOWNLOADS_ID,
+                    name = "Downloaded",
+                    subtitle = "Available offline",
+                    coverUri = "",
+                    isPlaylist = true,
+                )) + cached
+                HomeCache.library = withDownloads
+                emit(Response.Success(withDownloads))
+            } else {
+                val fallback = listOf(
+                    com.music.spotui.data.entity.LibraryEntry(
+                        spotifyId = LIKED_SONGS_ID,
+                        name = "Liked Songs",
+                        subtitle = "Playlist • Liked songs",
+                        coverUri = "https://misc.scdn.co/liked-songs/liked-songs-640.png",
+                        isPlaylist = true,
+                    ),
+                    com.music.spotui.data.entity.LibraryEntry(
+                        spotifyId = DOWNLOADS_ID,
+                        name = "Downloaded",
+                        subtitle = "Available offline",
+                        coverUri = "local://downloaded",
+                        isPlaylist = true,
+                    )
+                )
+                HomeCache.library = fallback
+                emit(Response.Success(fallback))
+            }
             return@flow
         }
         val albums = fetchAllPages { offset -> Spotify.myAlbums(limit = 50, offset = offset) }.map { a ->
@@ -611,7 +679,7 @@ class Api @Inject constructor(
             spotifyId = DOWNLOADS_ID,
             name = "Downloaded",
             subtitle = "Available offline",
-            coverUri = "",
+            coverUri = "local://downloaded",
             isPlaylist = true,
         )
         val merged = listOf(liked, downloaded) + playlists + albums
@@ -640,8 +708,15 @@ class Api @Inject constructor(
     /** The user's Spotify "Liked Songs" (saved tracks) as playable songs. */
     suspend fun getLikedSongs(): Flow<Response<List<SongsModel>>> = flow {
         emit(Response.Loading())
+        val cached = com.music.spotui.data.preferences.getCachedLikedSongs(context)
+        if (cached.isNotEmpty()) {
+            emit(Response.Success(cached))
+        }
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            emit(Response.Error("Spotify not authenticated")); return@flow
+            if (cached.isEmpty()) {
+                emit(Response.Error("Spotify not authenticated"));
+            }
+            return@flow
         }
         Spotify.likedSongs(limit = 50).fold(
             onSuccess = { first ->
@@ -649,6 +724,7 @@ class Api @Inject constructor(
                 // Seed the local like registry so hearts/menus show these as liked
                 // and unliking them can be mirrored back to Spotify.
                 models.forEach { com.music.spotui.data.preferences.addLikedSongId(context, it.id.toString()) }
+                com.music.spotui.data.preferences.cacheLikedSongs(context, models)
                 // First page immediately, then page through the whole library.
                 emit(Response.Success(models.toList()))
                 var offset = first.items.size
@@ -659,10 +735,11 @@ class Api @Inject constructor(
                     pageModels.forEach { com.music.spotui.data.preferences.addLikedSongId(context, it.id.toString()) }
                     models += pageModels
                     offset += page.items.size
+                    com.music.spotui.data.preferences.cacheLikedSongs(context, models)
                     emit(Response.Success(models.toList()))
                 }
             },
-            onFailure = { Log.e("Api", "getLikedSongs failed", it); emit(Response.Error(it.message ?: "error")) },
+            onFailure = { Log.e("Api", "getLikedSongs failed", it); if (cached.isEmpty()) emit(Response.Error(it.message ?: "error")) },
         )
     }
 
@@ -691,20 +768,29 @@ class Api @Inject constructor(
         if (playlistId.isBlank()) {
             emit(Response.Error("missing playlist id")); return@flow
         }
+        val cachedAlbum = com.music.spotui.data.preferences.getCachedPlaylistAlbum(context, playlistId)
+        if (cachedAlbum != null) {
+            emit(Response.Success(cachedAlbum))
+        }
         if (!SpotifyTokenProvider.ensureToken(context)) {
-            emit(Response.Error("Spotify not authenticated — set sp_dc cookie")); return@flow
+            if (cachedAlbum == null) {
+                emit(Response.Error("Spotify not authenticated — set sp_dc cookie"))
+            }
+            return@flow
         }
         Spotify.playlist(playlistId).fold(
             onSuccess = { p ->
-                emit(Response.Success(AlbumsModel(
+                val model = AlbumsModel(
                     id = stableId("playlist:${p.id}"),
                     artists = p.owner?.displayName ?: "",
                     coverUri = p.images.firstOrNull()?.url ?: "",
                     name = p.name,
                     time = stripHtml(p.description),
-                )))
+                )
+                com.music.spotui.data.preferences.cachePlaylistData(context, playlistId, model, emptyList())
+                emit(Response.Success(model))
             },
-            onFailure = { Log.e("Api", "getPlaylist failed", it); emit(Response.Error(it.message ?: "error")) },
+            onFailure = { Log.e("Api", "getPlaylist failed", it); if (cachedAlbum == null) emit(Response.Error(it.message ?: "error")) },
         )
     }
 

@@ -17,7 +17,11 @@ import javax.inject.Inject
 
 
 @HiltViewModel
-class AlbumViewModel @Inject constructor(private val repository: AppRepository, private val currentSongState: CurrentSongState) :  ViewModel() {
+class AlbumViewModel @Inject constructor(
+    private val repository: AppRepository,
+    private val currentSongState: CurrentSongState,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
+) :  ViewModel() {
 
     val currentSongPlayingState: State<Boolean> get() = currentSongState.playingState
 
@@ -61,8 +65,12 @@ class AlbumViewModel @Inject constructor(private val repository: AppRepository, 
         val key = "$name|$artist"
         if (albumKey == key) return
         albumKey = key
+        val cached = com.music.spotui.data.preferences.getCachedAlbumSongs(context, key)
+        if (cached.isNotEmpty()) _songs.value = Response.Success(cached)
+
         viewModelScope.launch(Dispatchers.IO) {
             repository.provideAlbumSongs(name, artist).collect { songs ->
+                if (songs is Response.Error && _songs.value is Response.Success) return@collect
                 _songs.value = songs as Response<List<SongsModel>>
             }
         }
