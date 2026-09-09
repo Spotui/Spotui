@@ -234,8 +234,7 @@ class TrackResolver {
             val targetHasWord = targetTitleLower.contains(word)
             val candidateHasWord = candidateTitleLower.contains(word)
             if (!targetHasWord && candidateHasWord) {
-                if (strict) return 0.0 // Reject completely in strict mode
-                score -= 80.0
+                return 0.0 // HARD REJECT! Never ever pick an unrequested remix, live or cover
             }
         }
 

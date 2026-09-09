@@ -109,21 +109,23 @@ internal object DeezerSession {
             val candArtist = obj.optJSONObject("artist")?.optString("name").orEmpty()
             val dur = obj.optInt("duration", 0)
 
-            // Duration check: reject if > 15s off
-            if (expectedDurationSec > 0) {
+            // Duration check: reject if > 12s off
+            if (expectedDurationSec > 0 && dur > 0) {
                 val delta = kotlin.math.abs(dur - expectedDurationSec)
-                if (delta > 15) continue
+                if (delta > 12) continue
             }
 
             // Negative keyword check: reject live, remix, acoustic, cover, tribute, karaoke, etc. unless requested
             val noiseWords = listOf(
                 "live", "remix", "rmx", "cover", "tribute", "karaoke",
                 "backing track", "instrumental", "acoustic", "slowed", "reverb",
-                "speed up", "sped up", "club mix", "vip mix", "dub mix", "mashup"
+                "speed up", "sped up", "club mix", "vip mix", "dub mix", "mashup",
+                "orchestral", "rendition", "piano", "toured", "festival", "concert"
             )
             val candVersion = obj.optString("title_version")
             val candAlbum = obj.optJSONObject("album")?.optString("title").orEmpty()
-            val candFullText = "$candTitle $candVersion $candAlbum".lowercase()
+            val candShort = obj.optString("title_short")
+            val candFullText = "$candTitle $candVersion $candAlbum $candShort".lowercase()
             val targetFullText = "${targetTitle.orEmpty()} $query".lowercase()
 
             val hasNoise = noiseWords.any { noise ->
@@ -138,7 +140,7 @@ internal object DeezerSession {
                 val targetTokens = normTarget.split(" ").filter { it.length > 1 }.toSet()
                 val candTokens = normCand.split(" ").filter { it.length > 1 }.toSet()
                 val overlap = if (targetTokens.isEmpty()) 0.0 else (targetTokens.intersect(candTokens).size.toDouble() / targetTokens.size)
-                val matches = normCand.contains(normTarget) || normTarget.contains(normCand) || overlap >= 0.5
+                val matches = normCand.contains(normTarget) || normTarget.contains(normCand) || overlap >= 0.6
                 if (!matches) {
                     continue // REJECT WRONG ARTIST!
                 }
@@ -152,7 +154,7 @@ internal object DeezerSession {
                     val targetTokens = normTarget.split(" ").filter { it.length > 1 }.toSet()
                     val candTokens = normCand.split(" ").filter { it.length > 1 }.toSet()
                     val overlap = if (targetTokens.isEmpty()) 0.0 else (targetTokens.intersect(candTokens).size.toDouble() / targetTokens.size)
-                    if (overlap < 0.5) continue
+                    if (overlap < 0.6) continue
                 }
             }
 
