@@ -155,7 +155,9 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                         val name = editName.trim().ifBlank { playlist.name.ifBlank { playlistName } }
                         playlistViewModel.editPlaylist(playlistId, name) { ok ->
                             if (ok) {
-                                android.widget.Toast.makeText(context, "Playlist updated!", android.widget.Toast.LENGTH_SHORT).show()
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    android.widget.Toast.makeText(context, "Playlist updated!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                         showEditDialog = false
@@ -191,11 +193,13 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                     onClick = {
                         showDeleteDialog = false
                         playlistViewModel.deletePlaylist(playlistId) { ok ->
-                            if (ok) {
-                                android.widget.Toast.makeText(context, "Playlist deleted", android.widget.Toast.LENGTH_SHORT).show()
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                if (ok) {
+                                    android.widget.Toast.makeText(context, "Playlist deleted", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                navController.navigateUp()
                             }
                         }
-                        navController.navigateUp()
                     }
                 ) {
                     Text("Delete", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
@@ -303,7 +307,9 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                         playlistViewModel.setPlaylistPublic(playlistId, nextPublic) { ok ->
                                             if (ok) {
                                                 val msg = if (nextPublic) "Playlist is now public" else "Playlist is now private"
-                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                                }
                                             }
                                         }
                                     }

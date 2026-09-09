@@ -71,12 +71,15 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun createPlaylist(name: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
-        if (name.isBlank()) { onDone(false); return@launch }
+        if (name.isBlank()) {
+            viewModelScope.launch(Dispatchers.Main) { onDone(false) }
+            return@launch
+        }
         com.music.spotui.data.api.SpotifySync.createPlaylistWithTrack(context, name, trackId = "") { ok ->
             if (ok) {
                 load()
             }
-            onDone(ok)
+            viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
         }
     }
 }

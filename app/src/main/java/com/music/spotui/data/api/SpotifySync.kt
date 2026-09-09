@@ -20,6 +20,10 @@ object SpotifySync {
     private const val TAG = "SpotifySync"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    private fun dispatchMain(block: () -> Unit) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post(block)
+    }
+
     fun setTrackSaved(context: Context, trackId: String, saved: Boolean) =
         setSaved(context, trackId, "spotify:track:$trackId", saved)
 
@@ -54,24 +58,24 @@ object SpotifySync {
 
     /** Adds a track to one of the user's playlists on Spotify itself. */
     fun addTrackToPlaylist(context: Context, playlistId: String, trackId: String, onDone: (Boolean) -> Unit = {}) {
-        if (playlistId.isBlank() || trackId.isBlank()) { onDone(false); return }
+        if (playlistId.isBlank() || trackId.isBlank()) { dispatchMain { onDone(false) }; return }
         val app = context.applicationContext
         scope.launch {
             val ok = SpotifyTokenProvider.ensureToken(app) &&
                 Spotify.addTracksToPlaylist(playlistId, listOf("spotify:track:$trackId")).isSuccess
             if (ok) membershipCache[playlistId]?.add(trackId)
             if (!ok) Log.w(TAG, "failed adding track $trackId to playlist $playlistId")
-            onDone(ok)
+            dispatchMain { onDone(ok) }
         }
     }
 
     /** Removes every occurrence of a track from one of the user's playlists on
      *  Spotify itself (resolves the playlist-scoped item uids first). */
     fun removeTrackFromPlaylist(context: Context, playlistId: String, trackId: String, onDone: (Boolean) -> Unit = {}) {
-        if (playlistId.isBlank() || trackId.isBlank()) { onDone(false); return }
+        if (playlistId.isBlank() || trackId.isBlank()) { dispatchMain { onDone(false) }; return }
         val app = context.applicationContext
         scope.launch {
-            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            if (!SpotifyTokenProvider.ensureToken(app)) { dispatchMain { onDone(false) }; return@launch }
             val uri = "spotify:track:$trackId"
             val refs = Spotify.playlistTracks(playlistId, limit = 100).getOrNull()
                 ?.items.orEmpty()
@@ -81,62 +85,64 @@ object SpotifySync {
                 Spotify.removeTracksFromPlaylist(playlistId, refs).isSuccess
             if (ok) membershipCache[playlistId]?.remove(trackId)
             if (!ok) Log.w(TAG, "failed removing track $trackId from playlist $playlistId")
-            onDone(ok)
+            dispatchMain { onDone(ok) }
         }
     }
 
     /** Creates a new playlist on Spotify and adds the track to it. */
     fun createPlaylistWithTrack(context: Context, name: String, trackId: String, onDone: (Boolean) -> Unit = {}) {
-        if (name.isBlank()) { onDone(false); return }
+        if (name.isBlank()) { dispatchMain { onDone(false) }; return }
         val app = context.applicationContext
         scope.launch {
-            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            if (!SpotifyTokenProvider.ensureToken(app)) { dispatchMain { onDone(false) }; return@launch }
             val playlist = Spotify.createPlaylist(name).getOrNull()
             if (playlist == null || playlist.id.isBlank()) {
-                Log.w(TAG, "createPlaylist '$name' failed"); onDone(false); return@launch
+                Log.w(TAG, "createPlaylist '$name' failed")
+                dispatchMain { onDone(false) }
+                return@launch
             }
             val ok = trackId.isBlank() ||
                 Spotify.addTracksToPlaylist(playlist.id, listOf("spotify:track:$trackId")).isSuccess
             if (ok && trackId.isNotBlank()) {
                 membershipCache[playlist.id] = java.util.concurrent.ConcurrentHashMap.newKeySet<String>().apply { add(trackId) }
             }
-            onDone(ok)
+            dispatchMain { onDone(ok) }
         }
     }
 
     /** Edits a playlist's name and/or description on Spotify. */
     fun editPlaylist(context: Context, playlistId: String, newName: String, onDone: (Boolean) -> Unit = {}) {
-        if (playlistId.isBlank() || newName.isBlank()) { onDone(false); return }
+        if (playlistId.isBlank() || newName.isBlank()) { dispatchMain { onDone(false) }; return }
         val app = context.applicationContext
         scope.launch {
-            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            if (!SpotifyTokenProvider.ensureToken(app)) { dispatchMain { onDone(false) }; return@launch }
             val ok = Spotify.editPlaylistAttributes(playlistId, newName = newName).isSuccess
             if (!ok) Log.w(TAG, "failed editing playlist $playlistId")
-            onDone(ok)
+            dispatchMain { onDone(ok) }
         }
     }
 
     /** Deletes a playlist on Spotify. */
     fun deletePlaylist(context: Context, playlistId: String, onDone: (Boolean) -> Unit = {}) {
-        if (playlistId.isBlank()) { onDone(false); return }
+        if (playlistId.isBlank()) { dispatchMain { onDone(false) }; return }
         val app = context.applicationContext
         scope.launch {
-            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            if (!SpotifyTokenProvider.ensureToken(app)) { dispatchMain { onDone(false) }; return@launch }
             val ok = Spotify.deletePlaylist(playlistId).isSuccess
             if (!ok) Log.w(TAG, "failed deleting playlist $playlistId")
-            onDone(ok)
+            dispatchMain { onDone(ok) }
         }
     }
 
     /** Sets a playlist's public/private visibility on Spotify. */
     fun setPlaylistPublic(context: Context, playlistId: String, isPublic: Boolean, onDone: (Boolean) -> Unit = {}) {
-        if (playlistId.isBlank()) { onDone(false); return }
+        if (playlistId.isBlank()) { dispatchMain { onDone(false) }; return }
         val app = context.applicationContext
         scope.launch {
-            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            if (!SpotifyTokenProvider.ensureToken(app)) { dispatchMain { onDone(false) }; return@launch }
             val ok = Spotify.setPlaylistPublic(playlistId, isPublic).isSuccess
             if (!ok) Log.w(TAG, "failed setting public=$isPublic for playlist $playlistId")
-            onDone(ok)
+            dispatchMain { onDone(ok) }
         }
     }
 

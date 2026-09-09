@@ -138,7 +138,9 @@ fun LibraryScreen(navController: NavController) {
                         val name = newPlaylistName.trim().ifBlank { "My Playlist" }
                         libraryViewModel.createPlaylist(name) { ok ->
                             if (ok) {
-                                android.widget.Toast.makeText(context, "Playlist created!", android.widget.Toast.LENGTH_SHORT).show()
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    android.widget.Toast.makeText(context, "Playlist created!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                         showCreatePlaylist = false

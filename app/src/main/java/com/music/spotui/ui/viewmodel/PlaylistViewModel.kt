@@ -107,7 +107,7 @@ class PlaylistViewModel @Inject constructor(
                     com.music.spotui.data.preferences.cachePlaylistData(context, playlistId, updated, emptyList())
                 }
             }
-            onDone(ok)
+            viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
         }
     }
 
@@ -116,11 +116,13 @@ class PlaylistViewModel @Inject constructor(
             if (ok) {
                 com.music.spotui.data.preferences.setPlaylistSavedInPref(context, playlistId, false)
             }
-            onDone(ok)
+            viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
         }
     }
 
     fun setPlaylistPublic(playlistId: String, isPublic: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
-        com.music.spotui.data.api.SpotifySync.setPlaylistPublic(context, playlistId, isPublic, onDone)
+        com.music.spotui.data.api.SpotifySync.setPlaylistPublic(context, playlistId, isPublic) { ok ->
+            viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
+        }
     }
 }
