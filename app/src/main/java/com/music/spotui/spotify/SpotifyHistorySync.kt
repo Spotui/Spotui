@@ -9,6 +9,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -234,6 +235,11 @@ object SpotifyHistorySync {
         val durationSec = (effectiveDurationMs / 1000).toInt()
 
         Log.i(TAG, "onTrackStart: id=$cleanId duration=${effectiveDurationMs}ms (context=$playbackContextUri, active=$activeTrackUri)")
+
+        if (activeTrackUri == trackUri && (activeSessionStarted || startJob?.isActive == true)) {
+            Log.d(TAG, "Already active or starting for $trackUri; skipping redundant start")
+            return
+        }
 
         // If another song was playing, capture it for pending finalization
         if (activeTrackUri != null && activeTrackUri != trackUri && activeSessionStarted) {
@@ -559,24 +565,26 @@ object SpotifyHistorySync {
     // ── Device registration ──
 
     private suspend fun ensureDevice(cookie: String, token: String): Device? =
-        deviceMutex.withLock {
-            val now = System.currentTimeMillis()
-            val hash = cookie.hashCode()
-            device?.takeIf { !it.closed && it.cookieHash == hash && now - it.createdAtMs < DEVICE_TTL_MS }
-                ?.let { return@withLock it }
+        withContext(NonCancellable) {
+            deviceMutex.withLock {
+                val now = System.currentTimeMillis()
+                val hash = cookie.hashCode()
+                device?.takeIf { !it.closed && it.cookieHash == hash && now - it.createdAtMs < DEVICE_TTL_MS }
+                    ?.let { return@withLock it }
 
-            device?.close()
-            device = null
+                device?.close()
+                device = null
 
-            runCatching {
-                val ep = fetchEndpoints()
-                val dealer = connectDealer(ep.dealerUrl, token)
-                val dev = registerDevice(cookie, token, hash, ep, dealer)
-                Log.i(TAG, "Device registered: ${dev.deviceId} (${dev.connectionId})")
-                dev
-            }.onFailure {
-                Log.w(TAG, "Device registration failed: ${it.message}", it)
-            }.getOrNull()?.also { device = it }
+                runCatching {
+                    val ep = fetchEndpoints()
+                    val dealer = connectDealer(ep.dealerUrl, token)
+                    val dev = registerDevice(cookie, token, hash, ep, dealer)
+                    Log.i(TAG, "Device registered: ${dev.deviceId} (${dev.connectionId})")
+                    dev
+                }.onFailure {
+                    Log.w(TAG, "Device registration failed: ${it.message}", it)
+                }.getOrNull()?.also { device = it }
+            }
         }
 
     private fun fetchEndpoints(): Endpoints {
