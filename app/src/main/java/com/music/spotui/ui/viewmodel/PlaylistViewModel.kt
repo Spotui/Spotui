@@ -57,9 +57,27 @@ class PlaylistViewModel @Inject constructor(
 
     private var playlistKey: String? = null
 
+    private val _isSaved = MutableStateFlow(false)
+    val isSaved: StateFlow<Boolean> = _isSaved
+
+    fun checkSaved(playlistId: String) {
+        _isSaved.value = com.music.spotui.data.preferences.isPlaylistSavedInPref(context, playlistId)
+    }
+
+    fun toggleSavePlaylist(playlistId: String) {
+        val next = !_isSaved.value
+        _isSaved.value = next
+        com.music.spotui.data.preferences.setPlaylistSavedInPref(context, playlistId, next)
+        com.music.spotui.data.api.SpotifySync.setPlaylistSaved(context, playlistId, next)
+    }
+
     fun loadPlaylist(playlistId: String) {
-        if (playlistKey == playlistId) return
+        if (playlistKey == playlistId) {
+            checkSaved(playlistId)
+            return
+        }
         playlistKey = playlistId
+        checkSaved(playlistId)
         val cachedAlbum = com.music.spotui.data.preferences.getCachedPlaylistAlbum(context, playlistId)
         if (cachedAlbum != null) _playlist.value = Response.Success(cachedAlbum)
         val cachedSongs = com.music.spotui.data.preferences.getCachedPlaylistSongs(context, playlistId)

@@ -68,16 +68,39 @@ class AlbumViewModel @Inject constructor(
 
     private var albumKey: String? = null
 
+    private val _isAlbumSaved = MutableStateFlow(false)
+    val isAlbumSaved: StateFlow<Boolean> = _isAlbumSaved
+
+    fun checkAlbumSaved() {
+        val key = albumKey ?: return
+        val id = com.music.spotui.data.preferences.getCachedAlbumId(context, key) ?: return
+        _isAlbumSaved.value = com.music.spotui.data.preferences.isAlbumSavedInPref(context, id)
+    }
+
+    fun toggleSaveAlbum() {
+        val key = albumKey ?: return
+        val id = com.music.spotui.data.preferences.getCachedAlbumId(context, key) ?: return
+        val next = !_isAlbumSaved.value
+        _isAlbumSaved.value = next
+        com.music.spotui.data.preferences.setAlbumSavedInPref(context, id, next)
+        com.music.spotui.data.api.SpotifySync.setAlbumSaved(context, id, next)
+    }
+
     /** Loads the tracks for a specific album (resolved via Spotify search). */
     fun loadAlbumSongs(name: String, artist: String = "") {
         val key = "$name|$artist"
-        if (albumKey == key) return
+        if (albumKey == key) {
+            checkAlbumSaved()
+            return
+        }
         albumKey = key
+        checkAlbumSaved()
         val cached = com.music.spotui.data.preferences.getCachedAlbumSongs(context, key)
         if (cached.isNotEmpty()) _songs.value = Response.Success(cached)
 
         viewModelScope.launch(Dispatchers.IO) {
             repository.provideAlbumSongs(name, artist).collect { songs ->
+                checkAlbumSaved()
                 if (songs is Response.Error && _songs.value is Response.Success) return@collect
                 _songs.value = songs as Response<List<SongsModel>>
             }

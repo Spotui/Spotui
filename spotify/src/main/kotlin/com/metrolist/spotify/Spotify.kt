@@ -36,6 +36,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -208,6 +209,24 @@ object Spotify {
         }
 
         throw SpotifyException(412, "No valid hash found for $operationName")
+    }
+
+    private suspend fun spclientPost(
+        path: String,
+        body: JsonObject,
+        token: String,
+    ): JsonObject {
+        val url = if (path.startsWith("http")) path else "https://spclient.wg.spotify.com/$path"
+        val response = gqlClient.post(url) {
+            header("Authorization", "Bearer $token")
+            setBody(TextContent(body.toString(), ContentType.Application.Json.withParameter("charset", "UTF-8")))
+        }
+        if (response.status.value !in 200..299) {
+            log("W", "spclientPost($path) HTTP ${response.status.value}: ${response.bodyAsText().take(200)}")
+            throw SpotifyException(response.status.value, "spclientPost($path) HTTP ${response.status.value}")
+        }
+        val text = response.bodyAsText()
+        return if (text.isBlank()) buildJsonObject {} else json.parseToJsonElement(text).jsonObject
     }
 
     private fun buildGqlBody(
@@ -1002,29 +1021,73 @@ object Spotify {
         }
 
     /**
-     * Creates a new (private) playlist for the current user via the REST API
-     * and returns it. The web-player token carries the playlist-modify scopes.
+     * Creates a new playlist for the current user via Spotify's internal
+     * playlist/v2 service and adds it to their rootlist (library).
      */
     suspend fun createPlaylist(name: String): Result<SpotifyPlaylist> =
         runCatching {
             val token = accessToken ?: throw SpotifyException(401, "Not authenticated")
             val userId = me().getOrThrow().id
             if (userId.isBlank()) throw SpotifyException(500, "No user id for createPlaylist")
-            val body = buildJsonObject {
-                put("name", name)
-                put("public", false)
+
+            val createPayload = buildJsonObject {
+                putJsonArray("ops") {
+                    addJsonObject {
+                        put("kind", "UPDATE_LIST_ATTRIBUTES")
+                        putJsonObject("updateListAttributes") {
+                            putJsonObject("newAttributes") {
+                                putJsonObject("values") {
+                                    put("name", name)
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            val response = restClient.post("users/$userId/playlists") {
-                header("Authorization", "Bearer $token")
-                setBody(TextContent(body.toString(), ContentType.Application.Json))
+
+            val createResp = spclientPost("playlist/v2/playlist", createPayload, token)
+            val uri = createResp.str("uri") ?: throw SpotifyException(500, "No uri in createPlaylist response")
+            val playlistId = uri.substringAfterLast(":")
+
+            val rootlistPayload = buildJsonObject {
+                putJsonArray("deltas") {
+                    addJsonObject {
+                        putJsonArray("ops") {
+                            addJsonObject {
+                                put("kind", "ADD")
+                                putJsonObject("add") {
+                                    put("addFirst", true)
+                                    putJsonArray("items") {
+                                        addJsonObject {
+                                            put("uri", uri)
+                                            putJsonObject("attributes") {
+                                                put("timestamp", System.currentTimeMillis().toString())
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        putJsonObject("info") {
+                            putJsonObject("source") {
+                                put("client", "WEBPLAYER")
+                            }
+                        }
+                    }
+                }
             }
-            if (response.status.value !in 200..299) {
-                log("W", "createPlaylist($name) HTTP ${response.status.value}: ${response.bodyAsText().take(200)}")
-                throw SpotifyException(response.status.value, "createPlaylist HTTP ${response.status.value}")
-            }
-            val playlist = json.decodeFromString<SpotifyPlaylist>(response.bodyAsText())
-            log("D", "createPlaylist($name) OK — ${playlist.id}")
-            playlist
+
+            spclientPost("playlist/v2/user/$userId/rootlist/changes", rootlistPayload, token)
+            log("D", "createPlaylist($name) OK — $playlistId ($uri)")
+
+            SpotifyPlaylist(
+                id = playlistId,
+                name = name,
+                uri = uri,
+                images = emptyList(),
+                owner = null,
+                tracks = null,
+            )
         }
 
     /**
@@ -1152,42 +1215,121 @@ object Spotify {
             )
         }
 
-    // ── Library Mutations (GQL: addToLibrary / removeFromLibrary) ──────
+    // ── Library Mutations (GQL: addToLibrary / removeFromLibrary + rootlist) ──
 
     /**
-     * Saves tracks/albums/playlists to the user's Spotify library (like).
-     * @param uris Full Spotify URIs, e.g. `["spotify:track:abc123"]`.
+     * Saves tracks/albums/playlists to the user's Spotify library (like/follow).
+     * Non-playlist items use GQL addToLibrary. Playlists/mixes are added to rootlist.
+     * @param uris Full Spotify URIs, e.g. `["spotify:track:abc123"]` or `["spotify:playlist:xyz"]`.
      */
     suspend fun addToLibrary(uris: List<String>): Result<Unit> =
         runCatching {
-            val vars = buildJsonObject {
-                putJsonArray("libraryItemUris") {
-                    uris.forEach { add(it) }
+            val token = accessToken ?: throw SpotifyException(401, "Not authenticated")
+            val (playlistUris, otherUris) = uris.partition { it.startsWith("spotify:playlist:") }
+
+            if (otherUris.isNotEmpty()) {
+                val vars = buildJsonObject {
+                    putJsonArray("libraryItemUris") {
+                        otherUris.forEach { add(it) }
+                    }
                 }
+                graphqlPost(
+                    operationName = "addToLibrary",
+                    variables = vars,
+                )
+                log("D", "addToLibrary: added ${otherUris.size} non-playlist items")
             }
-            graphqlPost(
-                operationName = "addToLibrary",
-                variables = vars,
-            )
-            log("D", "addToLibrary: added ${uris.size} items")
+
+            if (playlistUris.isNotEmpty()) {
+                val userId = me().getOrThrow().id
+                val now = System.currentTimeMillis().toString()
+                val rootlistPayload = buildJsonObject {
+                    putJsonArray("deltas") {
+                        addJsonObject {
+                            putJsonArray("ops") {
+                                addJsonObject {
+                                    put("kind", "ADD")
+                                    putJsonObject("add") {
+                                        put("addFirst", true)
+                                        putJsonArray("items") {
+                                            playlistUris.forEach { uri ->
+                                                addJsonObject {
+                                                    put("uri", uri)
+                                                    putJsonObject("attributes") {
+                                                        put("timestamp", now)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            putJsonObject("info") {
+                                putJsonObject("source") {
+                                    put("client", "WEBPLAYER")
+                                }
+                            }
+                        }
+                    }
+                }
+                spclientPost("playlist/v2/user/$userId/rootlist/changes", rootlistPayload, token)
+                log("D", "addToLibrary: added ${playlistUris.size} playlists to rootlist")
+            }
         }
 
     /**
-     * Removes tracks/albums/playlists from the user's Spotify library (unlike).
-     * @param uris Full Spotify URIs, e.g. `["spotify:track:abc123"]`.
+     * Removes tracks/albums/playlists from the user's Spotify library (unlike/unfollow).
+     * @param uris Full Spotify URIs, e.g. `["spotify:track:abc123"]` or `["spotify:playlist:xyz"]`.
      */
     suspend fun removeFromLibrary(uris: List<String>): Result<Unit> =
         runCatching {
-            val vars = buildJsonObject {
-                putJsonArray("libraryItemUris") {
-                    uris.forEach { add(it) }
+            val token = accessToken ?: throw SpotifyException(401, "Not authenticated")
+            val (playlistUris, otherUris) = uris.partition { it.startsWith("spotify:playlist:") }
+
+            if (otherUris.isNotEmpty()) {
+                val vars = buildJsonObject {
+                    putJsonArray("libraryItemUris") {
+                        otherUris.forEach { add(it) }
+                    }
                 }
+                graphqlPost(
+                    operationName = "removeFromLibrary",
+                    variables = vars,
+                )
+                log("D", "removeFromLibrary: removed ${otherUris.size} non-playlist items")
             }
-            graphqlPost(
-                operationName = "removeFromLibrary",
-                variables = vars,
-            )
-            log("D", "removeFromLibrary: removed ${uris.size} items")
+
+            if (playlistUris.isNotEmpty()) {
+                val userId = me().getOrThrow().id
+                val rootlistPayload = buildJsonObject {
+                    putJsonArray("deltas") {
+                        addJsonObject {
+                            putJsonArray("ops") {
+                                addJsonObject {
+                                    put("kind", "REM")
+                                    putJsonObject("rem") {
+                                        put("itemsAsKey", true)
+                                        putJsonArray("items") {
+                                            playlistUris.forEach { uri ->
+                                                addJsonObject {
+                                                    put("uri", uri)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            putJsonObject("info") {
+                                putJsonObject("source") {
+                                    put("client", "WEBPLAYER")
+                                }
+                            }
+                        }
+                    }
+                }
+                spclientPost("playlist/v2/user/$userId/rootlist/changes", rootlistPayload, token)
+                log("D", "removeFromLibrary: removed ${playlistUris.size} playlists from rootlist")
+            }
         }
 
     // ── Top Tracks (REST fallback — no GQL equivalent) ──────────────────

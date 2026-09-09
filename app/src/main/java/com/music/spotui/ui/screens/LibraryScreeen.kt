@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Person
@@ -97,6 +98,68 @@ fun LibraryScreen(navController: NavController) {
     var gridView by remember { mutableStateOf(isLibraryGridView(context)) }
     var searchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var showCreatePlaylist by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+
+    if (showCreatePlaylist) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                showCreatePlaylist = false
+                newPlaylistName = ""
+            },
+            containerColor = Color(0xFF282828),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text(
+                    text = "Give your playlist a name",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                )
+            },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    placeholder = { Text("My playlist", color = Color.Gray) },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF1ED760),
+                        unfocusedBorderColor = Color.Gray,
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val name = newPlaylistName.trim().ifBlank { "My Playlist" }
+                        libraryViewModel.createPlaylist(name) { ok ->
+                            if (ok) {
+                                android.widget.Toast.makeText(context, "Playlist created!", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showCreatePlaylist = false
+                        newPlaylistName = ""
+                    }
+                ) {
+                    Text("Create", color = Color(0xFF1ED760), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showCreatePlaylist = false
+                        newPlaylistName = ""
+                    }
+                ) {
+                    Text("Cancel", color = Color.LightGray)
+                }
+            }
+        )
+    }
 
     if (showAccount) {
         AccountSheet(
@@ -140,6 +203,20 @@ fun LibraryScreen(navController: NavController) {
                     ) {
                         searchActive = !searchActive
                         if (!searchActive) searchQuery = ""
+                    },
+            )
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Create playlist",
+                tint = Color.White,
+                modifier = Modifier
+                    .padding(end = 14.dp)
+                    .size(24.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        showCreatePlaylist = true
                     },
             )
             Box(

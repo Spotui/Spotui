@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -110,6 +112,10 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
 
     // 0 = playlist order, 1 = title A-Z, 2 = title Z-A, 3 = artist A-Z
     var sortOrder by remember { mutableStateOf(0) }
+    val isSaved by playlistViewModel.isSaved.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(playlistId) {
+        playlistViewModel.checkSaved(playlistId)
+    }
     val displaySongs = when (sortOrder) {
         1 -> songs.sortedBy { it.title.lowercase() }
         2 -> songs.sortedByDescending { it.title.lowercase() }
@@ -308,6 +314,23 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                             }
                                         },
                                     contentDescription = "Shuffle play",
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                // Save / follow playlist to library
+                                Icon(
+                                    imageVector = if (isSaved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                    tint = if (isSaved) Color(0xFF1ED760) else Color.White,
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) {
+                                            playlistViewModel.toggleSavePlaylist(playlistId)
+                                            val msg = if (!isSaved) "Added to Your Library" else "Removed from Your Library"
+                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                    contentDescription = if (isSaved) "Remove from library" else "Add to library",
                                 )
                                 Spacer(modifier = Modifier.width(16.dp))
                             }

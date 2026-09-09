@@ -25,6 +25,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -395,6 +397,24 @@ fun SumUpAlbumScreen(
                                         }
                                     },
                                 contentDescription = "Shuffle play",
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            // Save / like album to library
+                            val isAlbumSaved by albumViewModel.isAlbumSaved.collectAsState()
+                            Icon(
+                                imageVector = if (isAlbumSaved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                tint = if (isAlbumSaved) Color(0xFF1ED760) else Color.White,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) {
+                                        albumViewModel.toggleSaveAlbum()
+                                        val msg = if (!isAlbumSaved) "Added to Your Library" else "Removed from Your Library"
+                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                contentDescription = if (isAlbumSaved) "Remove from library" else "Add to library",
                             )
                         }
 

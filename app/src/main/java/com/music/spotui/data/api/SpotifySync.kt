@@ -29,6 +29,11 @@ object SpotifySync {
     fun setArtistFollowed(context: Context, artistId: String, followed: Boolean) =
         setSaved(context, artistId, "spotify:artist:$artistId", followed)
 
+    fun setPlaylistSaved(context: Context, playlistId: String, saved: Boolean) {
+        val cleanId = playlistId.removePrefix("spotify:playlist:")
+        setSaved(context, cleanId, "spotify:playlist:$cleanId", saved)
+    }
+
     private fun setSaved(context: Context, id: String, uri: String, saved: Boolean) {
         if (id.isBlank()) return
         val app = context.applicationContext
