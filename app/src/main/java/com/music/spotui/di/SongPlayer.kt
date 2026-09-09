@@ -197,6 +197,7 @@ object SongPlayer {
         streamCache.remove(song)
         sourceCache.remove(song)
         qualityCache.remove(song)
+        com.music.spotui.player.StreamUrlCache.remove(song)
     }
 
     fun playSong(song: String, context: Context) {
@@ -371,15 +372,16 @@ object SongPlayer {
     // of audio) of upcoming tracks into a media cache the player reads through, so a tap on a
     // preloaded track starts almost instantly. Skipped for local files (already instant) and
     // when the user turns preloading off in Settings.
-    private const val PRELOAD_BYTES = 1L * 1024 * 1024
+    private const val PRELOAD_BYTES = 1536L * 1024 // 1.5 MB intro segment
 
     @Volatile private var mediaCache: androidx.media3.datasource.cache.SimpleCache? = null
 
     private fun mediaCache(context: Context): androidx.media3.datasource.cache.SimpleCache =
         mediaCache ?: synchronized(this) {
+            val maxMb = com.music.spotui.data.preferences.getMediaCacheMaxMb(context).toLong()
             mediaCache ?: androidx.media3.datasource.cache.SimpleCache(
                 java.io.File(context.cacheDir, "media"),
-                androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(256L * 1024 * 1024),
+                androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor(maxMb * 1024L * 1024L),
                 androidx.media3.database.StandaloneDatabaseProvider(context),
             ).also { mediaCache = it }
         }
@@ -422,6 +424,61 @@ object SongPlayer {
                 .build()
             androidx.media3.datasource.cache.CacheWriter(ds, spec, null, null).cache()
         }.onFailure { Log.d(TAG, "intro preload skipped: ${it.message}") }
+    }
+
+    fun getMediaCacheSizeBytes(context: Context): Long {
+        var total = 0L
+        val mediaDir = java.io.File(context.cacheDir, "media")
+        if (mediaDir.exists()) {
+            total += mediaDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }
+        val appMediaDir = java.io.File(context.cacheDir, "app_media_cache")
+        if (appMediaDir.exists()) {
+            total += appMediaDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }
+        return total
+    }
+
+    fun clearMediaCache(context: Context): Long {
+        val bytesBefore = getMediaCacheSizeBytes(context)
+        try {
+            mediaCache?.let { c ->
+                val keys = c.keys.toList()
+                for (k in keys) {
+                    runCatching { c.removeResource(k) }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "mediaCache clean: ${e.message}")
+        }
+        val mediaDir = java.io.File(context.cacheDir, "media")
+        if (mediaDir.exists()) {
+            mediaDir.listFiles()?.forEach { if (it.isFile && !it.name.endsWith(".db")) it.delete() }
+        }
+        val appMediaDir = java.io.File(context.cacheDir, "app_media_cache")
+        if (appMediaDir.exists()) {
+            appMediaDir.listFiles()?.forEach { if (it.isFile && !it.name.endsWith(".db")) it.delete() }
+        }
+        com.music.spotui.player.StreamUrlCache.clear()
+        streamCache.clear()
+        return bytesBefore
+    }
+
+    fun getImageCacheSizeBytes(context: Context): Long {
+        val glideDir = java.io.File(context.cacheDir, "image_manager_disk_cache")
+        if (glideDir.exists()) {
+            return glideDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }
+        return 0L
+    }
+
+    fun clearImageCache(context: Context): Long {
+        val bytesBefore = getImageCacheSizeBytes(context)
+        val glideDir = java.io.File(context.cacheDir, "image_manager_disk_cache")
+        if (glideDir.exists()) {
+            glideDir.deleteRecursively()
+        }
+        return bytesBefore
     }
 
     // forPlayback=true only for the track actually being played — so background

@@ -60,6 +60,22 @@ fun setLibraryGridView(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_
 fun isPreloadEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_PRELOAD, true)
 fun setPreloadEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_PRELOAD, v).apply()
 
+private const val KEY_MEDIA_CACHE_MAX_MB = "media_cache_max_mb"
+fun getMediaCacheMaxMb(c: Context): Int = prefs(c).getInt(KEY_MEDIA_CACHE_MAX_MB, 1024)
+fun setMediaCacheMaxMb(c: Context, mb: Int) = prefs(c).edit().putInt(KEY_MEDIA_CACHE_MAX_MB, mb).apply()
+
+fun formatBytesHumanReadable(bytes: Long): String {
+    if (bytes <= 0) return "0 MB"
+    val kb = bytes / 1024.0
+    val mb = kb / 1024.0
+    val gb = mb / 1024.0
+    return when {
+        gb >= 1.0 -> "%.1f GB".format(gb)
+        mb >= 1.0 -> "%.0f MB".format(mb)
+        else -> "%.0f KB".format(kb)
+    }
+}
+
 /**
  * YouTube account cookie (captured from an in-app WebView login). Passed to the
  * InnerTube client so age-restricted / login-required videos resolve. Empty when
