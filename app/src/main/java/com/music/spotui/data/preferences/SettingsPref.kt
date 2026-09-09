@@ -60,6 +60,22 @@ fun setLibraryGridView(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_
 fun isPreloadEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_PRELOAD, true)
 fun setPreloadEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_PRELOAD, v).apply()
 
+private const val KEY_MEDIA_CACHE_MAX_MB = "media_cache_max_mb"
+fun getMediaCacheMaxMb(c: Context): Int = prefs(c).getInt(KEY_MEDIA_CACHE_MAX_MB, 1024)
+fun setMediaCacheMaxMb(c: Context, mb: Int) = prefs(c).edit().putInt(KEY_MEDIA_CACHE_MAX_MB, mb).apply()
+
+fun formatBytesHumanReadable(bytes: Long): String {
+    if (bytes <= 0) return "0 MB"
+    val kb = bytes / 1024.0
+    val mb = kb / 1024.0
+    val gb = mb / 1024.0
+    return when {
+        gb >= 1.0 -> "%.1f GB".format(gb)
+        mb >= 1.0 -> "%.0f MB".format(mb)
+        else -> "%.0f KB".format(kb)
+    }
+}
+
 /**
  * YouTube account cookie (captured from an in-app WebView login). Passed to the
  * InnerTube client so age-restricted / login-required videos resolve. Empty when
@@ -128,6 +144,13 @@ fun setCrossfadeMs(c: Context, ms: Int) =
 
 fun isCrossfadeEnabled(c: Context): Boolean = getCrossfadeMs(c) > 0
 
+fun isNetworkAvailable(context: Context): Boolean = runCatching {
+    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+    val net = cm.activeNetwork ?: return false
+    val caps = cm.getNetworkCapabilities(net) ?: return false
+    caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}.getOrDefault(false)
+
 /** DJ-style mixing: low-pass the outgoing track and high-pass the incoming one during the blend. */
 fun isCrossfadeDjMode(c: Context): Boolean = prefs(c).getBoolean(KEY_CROSSFADE_DJ, false)
 fun setCrossfadeDjMode(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_CROSSFADE_DJ, v).apply()
@@ -136,6 +159,11 @@ fun setCrossfadeDjMode(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_
  * The streaming quality to use for the *current* active network: the cellular setting
  * on a metered connection (mobile data / metered hotspot), the Wi-Fi setting otherwise.
  */
+// ── Spotify history sync ──
+private const val KEY_SPOTIFY_HISTORY_SYNC = "spotify_history_sync_enabled"
+fun isSpotifyHistorySyncEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_SPOTIFY_HISTORY_SYNC, true)
+fun setSpotifyHistorySyncEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_SPOTIFY_HISTORY_SYNC, v).apply()
+
 fun currentStreamingQuality(c: Context): StreamQuality {
     val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
     val isMetered = cm?.isActiveNetworkMetered ?: false

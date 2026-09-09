@@ -21,6 +21,34 @@ data class SearchResult(
 )
 
 object SearchPage {
+    fun fromMusicCardShelfRenderer(renderer: com.metrolist.innertube.models.MusicCardShelfRenderer): YTItem? {
+        val videoId = renderer.onTap?.watchEndpoint?.videoId
+            ?: renderer.buttons?.firstOrNull { it.buttonRenderer.command?.watchEndpoint != null }
+                ?.buttonRenderer?.command?.watchEndpoint?.videoId
+            ?: return null
+
+        val title = renderer.title?.runs?.firstOrNull()?.text ?: return null
+        val subtitle = renderer.subtitle?.runs?.splitBySeparator()
+        val artistRuns = subtitle?.firstOrNull()?.oddElements()
+        val artists = artistRuns?.map {
+            Artist(
+                name = it.text,
+                id = it.navigationEndpoint?.browseEndpoint?.browseId,
+            )
+        } ?: listOf(Artist(name = subtitle?.firstOrNull()?.firstOrNull()?.text ?: "", id = null))
+
+        val duration = subtitle?.lastOrNull()?.firstOrNull()?.text?.parseTime()
+
+        return SongItem(
+            id = videoId,
+            title = title,
+            artists = artists,
+            album = null,
+            duration = duration,
+            thumbnail = renderer.thumbnail?.musicThumbnailRenderer?.getThumbnailUrl() ?: "",
+        )
+    }
+
     fun toYTItem(renderer: MusicResponsiveListItemRenderer): YTItem? {
         val secondaryLine =
             renderer.flexColumns
@@ -108,24 +136,38 @@ object SearchPage {
             }
             renderer.isSong -> {
                 val libraryTokens = PageHelper.extractLibraryTokensFromMenuItems(renderer.menu?.menuRenderer?.items)
+                val videoId = renderer.playlistItemData?.videoId
+                    ?: renderer.navigationEndpoint?.watchEndpoint?.videoId
+                    ?: renderer.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId
+                    ?: return null
+
+                val title = renderer.flexColumns
+                    .firstOrNull()
+                    ?.musicResponsiveListItemFlexColumnRenderer
+                    ?.text
+                    ?.runs
+                    ?.firstOrNull()
+                    ?.text ?: return null
+
+                val parsedArtists = secondaryLine.firstOrNull()?.oddElements()?.mapNotNull { run ->
+                    run.text.takeIf { it.isNotBlank() }?.let { name ->
+                        Artist(
+                            name = name,
+                            id = run.navigationEndpoint?.browseEndpoint?.browseId,
+                        )
+                    }
+                }
+                val artists = if (!parsedArtists.isNullOrEmpty()) {
+                    parsedArtists
+                } else {
+                    val fallbackName = secondaryLine.firstOrNull()?.firstOrNull()?.text?.takeIf { it.isNotBlank() }
+                    if (fallbackName != null) listOf(Artist(name = fallbackName, id = null)) else emptyList()
+                }
 
                 SongItem(
-                    id = renderer.playlistItemData?.videoId ?: return null,
-                    title =
-                        renderer.flexColumns
-                            .firstOrNull()
-                            ?.musicResponsiveListItemFlexColumnRenderer
-                            ?.text
-                            ?.runs
-                            ?.firstOrNull()
-                            ?.text ?: return null,
-                    artists =
-                        secondaryLine.firstOrNull()?.oddElements()?.map {
-                            Artist(
-                                name = it.text,
-                                id = it.navigationEndpoint?.browseEndpoint?.browseId,
-                            )
-                        } ?: return null,
+                    id = videoId,
+                    title = title,
+                    artists = artists,
                     album =
                         secondaryLine.getOrNull(1)?.firstOrNull()?.takeIf { it.navigationEndpoint?.browseEndpoint != null }?.let {
                             Album(
@@ -140,7 +182,8 @@ object SearchPage {
                             ?.text
                             ?.parseTime(),
                     musicVideoType = renderer.musicVideoType,
-                    thumbnail = renderer.thumbnail?.musicThumbnailRenderer?.getThumbnailUrl() ?: return null,
+                    thumbnail = renderer.thumbnail?.musicThumbnailRenderer?.getThumbnailUrl()
+                        ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
                     explicit =
                         renderer.badges?.find {
                             it.musicInlineBadgeRenderer?.icon?.iconType == "MUSIC_EXPLICIT_BADGE"

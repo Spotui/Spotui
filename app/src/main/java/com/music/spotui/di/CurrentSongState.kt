@@ -30,6 +30,13 @@ class CurrentSongState @Inject constructor() {
     private val _songId: MutableState<Int> = mutableStateOf(0)
     val songId : State<Int> get() = _songId
 
+    private val _playbackContextUri: MutableState<String?> = mutableStateOf(null)
+    val playbackContextUri: State<String?> get() = _playbackContextUri
+
+    fun updatePlaybackContextUri(uri: String?) {
+        _playbackContextUri.value = uri
+    }
+
     // The actual list the user is playing (album tracks, search results, liked
     // songs…). Next/previous operate on THIS, not on a re-derived global feed.
     private val _queue: MutableState<List<SongsModel>> = mutableStateOf(emptyList())
@@ -154,6 +161,18 @@ class CurrentSongState @Inject constructor() {
         // time the user opens the player / scrolls to the lyrics card.
         if (playingState && title.isNotBlank()) {
             com.music.spotui.data.api.LyricsApi.prefetch(title, singer, album)
+            // Report to Spotify listening history (sync with Spotify recently played).
+            _queue.value.firstOrNull { it.id == songId }?.let { track ->
+                if (track.spotifyTrackId.isNotBlank()) {
+                    val dur = if (track.durationMs > 0) track.durationMs.toLong() else 180_000L
+                    com.music.spotui.spotify.SpotifyHistorySync.onTrackStart(
+                        com.music.spotui.MyApplication.instance,
+                        track.spotifyTrackId,
+                        dur,
+                        playbackContextUri = _playbackContextUri.value,
+                    )
+                }
+            }
             // Log the play into the local listening history (History & stats screen).
             com.music.spotui.data.preferences.addListeningHistory(
                 com.music.spotui.MyApplication.instance,

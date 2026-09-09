@@ -7,6 +7,7 @@ import com.metrolist.innertube.models.getContinuation
 import com.metrolist.innertube.models.getItems
 import com.metrolist.innertube.models.response.PlayerResponse
 import com.metrolist.innertube.models.response.SearchResponse
+import com.metrolist.innertube.models.YTItem
 import com.metrolist.innertube.pages.SearchPage
 import com.metrolist.innertube.pages.SearchResult
 import io.ktor.client.call.body
@@ -66,19 +67,46 @@ object YouTube {
         }
 
     suspend fun search(query: String, filter: SearchFilter): Result<SearchResult> = runCatching {
-        val response = innerTube.search(WEB_REMIX, query, filter.value).body<SearchResponse>()
-        val shelves = response.contents?.tabbedSearchResultsRenderer?.tabs?.firstOrNull()
+        val response = innerTube.search(WEB_REMIX, query, filter.value.ifEmpty { null }).body<SearchResponse>()
+        val contents = response.contents?.tabbedSearchResultsRenderer?.tabs?.firstOrNull()
             ?.tabRenderer?.content?.sectionListRenderer?.contents
-            ?.mapNotNull { it.musicShelfRenderer }
             .orEmpty()
+
+        val items = mutableListOf<YTItem>()
+
+        // 1. Parse Top Result cards (musicCardShelfRenderer) - e.g. official artist audio/video
+        contents.mapNotNull { it.musicCardShelfRenderer }.forEach { card ->
+            SearchPage.fromMusicCardShelfRenderer(card)?.let { items.add(it) }
+            card.contents?.mapNotNull { it.musicResponsiveListItemRenderer }?.mapNotNull { SearchPage.toYTItem(it) }?.let {
+                items.addAll(it)
+            }
+        }
+
+        // 2. Parse standard music shelves
+        contents.mapNotNull { it.musicShelfRenderer }.forEach { shelf ->
+            shelf.contents?.getItems()?.mapNotNull { SearchPage.toYTItem(it) }?.let { items.addAll(it) }
+        }
+
+        // 3. Parse modern itemSectionRenderer contents
+        contents.mapNotNull { it.itemSectionRenderer }.forEach { section ->
+            section.contents?.mapNotNull { it.musicResponsiveListItemRenderer }?.mapNotNull { SearchPage.toYTItem(it) }?.let {
+                items.addAll(it)
+            }
+            section.contents?.mapNotNull { it.musicShelfRenderer }?.forEach { shelf ->
+                shelf.contents?.getItems()?.mapNotNull { SearchPage.toYTItem(it) }?.let { items.addAll(it) }
+            }
+        }
+
+        val continuations = contents.mapNotNull { it.musicShelfRenderer }.firstOrNull { it.continuations != null }
+            ?.continuations?.getContinuation()
+
         SearchResult(
-            items = shelves.flatMap { shelf ->
-                shelf.contents?.getItems()?.mapNotNull { SearchPage.toYTItem(it) } ?: emptyList()
-            }.distinctBy { it.id },
-            continuation = shelves.firstOrNull { it.continuations != null }
-                ?.continuations?.getContinuation()
+            items = items.distinctBy { it.id },
+            continuation = continuations
         )
     }
+
+    suspend fun searchGeneral(query: String): Result<SearchResult> = search(query, SearchFilter.FILTER_ALL)
 
     suspend fun searchContinuation(continuation: String): Result<SearchResult> = runCatching {
         val response = innerTube.search(WEB_REMIX, continuation = continuation).body<SearchResponse>()
@@ -123,6 +151,7 @@ object YouTube {
         companion object {
             val FILTER_SONG = SearchFilter("EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D")
             val FILTER_VIDEO = SearchFilter("EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D")
+            val FILTER_ALL = SearchFilter("")
         }
     }
 

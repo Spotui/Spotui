@@ -15,7 +15,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class HomeViewModel @Inject constructor(private val repository: AppRepository)  : ViewModel() {
+class HomeViewModel @Inject constructor(
+    private val repository: AppRepository,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
+)  : ViewModel() {
 
 
     private val _albums : MutableStateFlow<Response<List<AlbumsModel>>> = MutableStateFlow(Response.Loading())
@@ -29,6 +32,9 @@ class HomeViewModel @Inject constructor(private val repository: AppRepository)  
 
 
     init {
+        com.music.spotui.data.preferences.getCachedHomeFeed(context)?.let {
+            _home.value = Response.Success(it)
+        }
         fetchHome()
         fetchArtists()
         fetchAlbums()
@@ -36,6 +42,7 @@ class HomeViewModel @Inject constructor(private val repository: AppRepository)  
 
     private fun fetchHome() = viewModelScope.launch(Dispatchers.IO) {
         repository.provideHomeFeed().collect { feed ->
+            if (feed is Response.Error && _home.value is Response.Success) return@collect
             _home.value = feed
         }
     }

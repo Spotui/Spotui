@@ -10,7 +10,7 @@ private const val PREF = "LibraryCache"
 
 fun cacheLibraryEntries(context: Context, entries: List<LibraryEntry>) {
     val json = JSONArray().apply {
-        entries.forEach { e ->
+        entries.distinctBy { it.spotifyId }.forEach { e ->
             put(JSONObject().apply {
                 put("spotifyId", e.spotifyId)
                 put("name", e.name)

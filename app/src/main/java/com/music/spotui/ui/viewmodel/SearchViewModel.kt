@@ -53,6 +53,9 @@ class SearchViewModel @Inject constructor(private val repository: AppRepository,
      * if the user has since started something else.
      */
     fun startRadioFromSong(song: SongsModel) {
+        if (song.spotifyTrackId.isNotBlank()) {
+            currentSongState.updatePlaybackContextUri("spotify:station:track:${song.spotifyTrackId}")
+        }
         currentSongState.updateQueue(listOf(song))
         val seed = song.spotifyTrackId
         if (seed.isBlank()) return
@@ -73,6 +76,12 @@ class SearchViewModel @Inject constructor(private val repository: AppRepository,
 
     fun search(query: String) {
         searchJob?.cancel()
+        if (query.isBlank()) {
+            _results.value = Response.Success(SearchResults())
+            _songs.value = Response.Success(emptyList())
+            return
+        }
+        _results.value = Response.Loading()
         searchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(150) // short debounce for snappy real-time results
             repository.searchEverything(query).collect { result ->

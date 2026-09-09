@@ -19,6 +19,7 @@ import javax.inject.Inject
 class PlaylistViewModel @Inject constructor(
     private val repository: AppRepository,
     private val currentSongState: CurrentSongState,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
 
     val currentSongPlayingState: State<Boolean> get() = currentSongState.playingState
@@ -46,6 +47,8 @@ class PlaylistViewModel @Inject constructor(
         currentSongState.updateSongState(coverUri, title, singer, playingState, songId, songIndex, album)
     }
 
+    fun updatePlaybackContext(uri: String?) = currentSongState.updatePlaybackContextUri(uri)
+
     val likeState = currentSongState.likeState
 
     fun updateLikeState(likeState: Boolean) {
@@ -54,14 +57,97 @@ class PlaylistViewModel @Inject constructor(
 
     private var playlistKey: String? = null
 
+    private val _isSaved = MutableStateFlow(false)
+    val isSaved: StateFlow<Boolean> = _isSaved
+
+    private val _isPublic = MutableStateFlow(false)
+    val isPublic: StateFlow<Boolean> = _isPublic
+
+    private val _canEdit = MutableStateFlow(false)
+    val canEdit: StateFlow<Boolean> = _canEdit
+
+    fun checkSaved(playlistId: String) {
+        _isSaved.value = com.music.spotui.data.preferences.isPlaylistSavedInPref(context, playlistId)
+    }
+
+    fun toggleSavePlaylist(playlistId: String) {
+        val next = !_isSaved.value
+        _isSaved.value = next
+        com.music.spotui.data.preferences.setPlaylistSavedInPref(context, playlistId, next)
+        com.music.spotui.data.api.SpotifySync.setPlaylistSaved(context, playlistId, next)
+    }
+
     fun loadPlaylist(playlistId: String) {
-        if (playlistKey == playlistId) return
+        if (playlistKey == playlistId) {
+            checkSaved(playlistId)
+            return
+        }
         playlistKey = playlistId
+        checkSaved(playlistId)
+        _canEdit.value = false
+
+        val cachedAlbum = com.music.spotui.data.preferences.getCachedPlaylistAlbum(context, playlistId)
+        if (cachedAlbum != null) {
+            _playlist.value = Response.Success(cachedAlbum)
+            if (cachedAlbum.artists.equals("spotify", ignoreCase = true) || playlistId.startsWith("37i9dQ")) {
+                _canEdit.value = false
+            }
+        }
+        val cachedSongs = com.music.spotui.data.preferences.getCachedPlaylistSongs(context, playlistId)
+        if (cachedSongs.isNotEmpty()) _songs.value = Response.Success(cachedSongs)
+
         viewModelScope.launch(Dispatchers.IO) {
-            repository.providePlaylist(playlistId).collect { _playlist.value = it }
+            repository.providePlaylist(playlistId).collect {
+                if (it is Response.Error && _playlist.value is Response.Success) return@collect
+                _playlist.value = it
+            }
         }
         viewModelScope.launch(Dispatchers.IO) {
-            repository.providePlaylistSongs(playlistId).collect { _songs.value = it }
+            repository.providePlaylistSongs(playlistId).collect {
+                if (it is Response.Error && _songs.value is Response.Success) return@collect
+                _songs.value = it
+            }
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            if (com.music.spotui.data.api.SpotifyTokenProvider.ensureToken(context)) {
+                val pl = com.metrolist.spotify.Spotify.playlist(playlistId).getOrNull()
+                if (pl != null) {
+                    _isPublic.value = (pl.public == true)
+                    _canEdit.value = pl.canEdit
+                }
+            }
+        }
+    }
+
+    fun editPlaylist(playlistId: String, newName: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
+        com.music.spotui.data.api.SpotifySync.editPlaylist(context, playlistId, newName) { ok ->
+            if (ok) {
+                val curAlbum = _playlist.value
+                if (curAlbum is Response.Success) {
+                    val updated = curAlbum.data.copy(name = newName)
+                    _playlist.value = Response.Success(updated)
+                    com.music.spotui.data.preferences.cachePlaylistData(context, playlistId, updated, emptyList())
+                }
+            }
+            viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun deletePlaylist(playlistId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
+        com.music.spotui.data.api.SpotifySync.deletePlaylist(context, playlistId) { ok ->
+            if (ok) {
+                com.music.spotui.data.preferences.setPlaylistSavedInPref(context, playlistId, false)
+            }
+            viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
+        }
+    }
+
+    fun setPlaylistPublic(playlistId: String, isPublic: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
+        com.music.spotui.data.api.SpotifySync.setPlaylistPublic(context, playlistId, isPublic) { ok ->
+            if (ok) {
+                _isPublic.value = isPublic
+            }
+            viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
         }
     }
 }

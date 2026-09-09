@@ -219,6 +219,9 @@ class PlayerViewModel @Inject constructor(private val currentSongState: CurrentS
                     if (q.size > queueSongs.size) {
                         val next = q[queueSongs.size]
                         withContext(Dispatchers.Main) {
+                            if (next.spotifyTrackId.isNotBlank()) {
+                                currentSongState.updatePlaybackContextUri("spotify:station:track:${next.spotifyTrackId}")
+                            }
                             updateSongState(next.coverUri, next.title, next.singer, true, next.id, queueSongs.size, next.album)
                             SongPlayer.playSong(next.url, context)
                         }

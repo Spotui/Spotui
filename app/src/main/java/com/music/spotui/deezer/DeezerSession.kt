@@ -81,29 +81,90 @@ internal object DeezerSession {
 
     /**
      * Fallback lookup: best Deezer track match for a free-text "title artist".
-     * When [expectedDurationSec] > 0, fetches up to 5 candidates and picks the one
-     * whose duration is closest — rejecting any match more than 10 seconds off to
-     * avoid landing on a remix, cover, or entirely wrong track.
+     * Inspects up to 10 candidates and strictly validates artist, title, duration,
+     * and filters out noise (covers, karaoke, tributes) to prevent wrong track playback.
      */
-    fun searchTrackId(query: String, expectedDurationSec: Int = 0): String? = runCatching {
-        val limit = if (expectedDurationSec > 0) 5 else 1
+    fun searchTrackId(
+        query: String,
+        expectedDurationSec: Int = 0,
+        expectedArtist: String? = null,
+        expectedTitle: String? = null,
+    ): String? = runCatching {
+        val limit = 10
         val enc = URLEncoder.encode(query, "UTF-8")
         val json = callPublicApi("search/track?q=$enc&limit=$limit")
         val data = json.optJSONArray("data") ?: return@runCatching null
-        if (expectedDurationSec <= 0 || data.length() == 0) {
-            return@runCatching data.optJSONObject(0)?.optString("id")?.takeIf { it.isNotBlank() }
-        }
-        // Deezer search results include "duration" in seconds — pick the closest match.
+        if (data.length() == 0) return@runCatching null
+
+        val targetArtist = expectedArtist?.trim()?.ifBlank { null }
+        val targetTitle = expectedTitle?.trim()?.ifBlank { null }
+
         var bestId: String? = null
         var bestDelta = Int.MAX_VALUE
+
         for (i in 0 until data.length()) {
             val obj = data.getJSONObject(i)
             val id = obj.optString("id").takeIf { it.isNotBlank() } ?: continue
+            val candTitle = obj.optString("title")
+            val candArtist = obj.optJSONObject("artist")?.optString("name").orEmpty()
             val dur = obj.optInt("duration", 0)
-            val delta = kotlin.math.abs(dur - expectedDurationSec)
-            if (delta < bestDelta) { bestDelta = delta; bestId = id }
+
+            // Duration check: reject if > 12s off
+            if (expectedDurationSec > 0 && dur > 0) {
+                val delta = kotlin.math.abs(dur - expectedDurationSec)
+                if (delta > 12) continue
+            }
+
+            // Negative keyword check: reject live, remix, acoustic, cover, tribute, karaoke, etc. unless requested
+            val noiseWords = listOf(
+                "live", "remix", "rmx", "cover", "tribute", "karaoke",
+                "backing track", "instrumental", "acoustic", "slowed", "reverb",
+                "speed up", "sped up", "club mix", "vip mix", "dub mix", "mashup",
+                "orchestral", "rendition", "piano", "toured", "festival", "concert"
+            )
+            val candVersion = obj.optString("title_version")
+            val candAlbum = obj.optJSONObject("album")?.optString("title").orEmpty()
+            val candShort = obj.optString("title_short")
+            val candFullText = "$candTitle $candVersion $candAlbum $candShort".lowercase()
+            val targetFullText = "${targetTitle.orEmpty()} $query".lowercase()
+
+            val hasNoise = noiseWords.any { noise ->
+                !targetFullText.contains(noise) && candFullText.contains(noise)
+            }
+            if (hasNoise) continue
+
+            // Artist validation: if targetArtist is known, candidate artist MUST match
+            if (!targetArtist.isNullOrBlank()) {
+                val normTarget = targetArtist.lowercase().replace(Regex("[^a-z0-9]"), " ").trim()
+                val normCand = candArtist.lowercase().replace(Regex("[^a-z0-9]"), " ").trim()
+                val targetTokens = normTarget.split(" ").filter { it.length > 1 }.toSet()
+                val candTokens = normCand.split(" ").filter { it.length > 1 }.toSet()
+                val overlap = if (targetTokens.isEmpty()) 0.0 else (targetTokens.intersect(candTokens).size.toDouble() / targetTokens.size)
+                val matches = normCand.contains(normTarget) || normTarget.contains(normCand) || overlap >= 0.6
+                if (!matches) {
+                    continue // REJECT WRONG ARTIST!
+                }
+            }
+
+            // Title validation: if targetTitle is known, candidate title must match
+            if (!targetTitle.isNullOrBlank()) {
+                val normTarget = targetTitle.lowercase().replace(Regex("""\([^)]*\)|\[[^\]]*\]"""), "").replace(Regex("[^a-z0-9]"), " ").trim()
+                val normCand = candTitle.lowercase().replace(Regex("""\([^)]*\)|\[[^\]]*\]"""), "").replace(Regex("[^a-z0-9]"), " ").trim()
+                if (normTarget.isNotBlank() && !normCand.contains(normTarget) && !normTarget.contains(normCand)) {
+                    val targetTokens = normTarget.split(" ").filter { it.length > 1 }.toSet()
+                    val candTokens = normCand.split(" ").filter { it.length > 1 }.toSet()
+                    val overlap = if (targetTokens.isEmpty()) 0.0 else (targetTokens.intersect(candTokens).size.toDouble() / targetTokens.size)
+                    if (overlap < 0.6) continue
+                }
+            }
+
+            val delta = if (expectedDurationSec > 0) kotlin.math.abs(dur - expectedDurationSec) else 0
+            if (delta < bestDelta) {
+                bestDelta = delta
+                bestId = id
+            }
         }
-        if (bestDelta > 10) null else bestId // reject covers / remixes more than 10 s off
+        bestId
     }.getOrNull()
 
     /** Fetch the private stream token + CDN origin for a Deezer track id. */

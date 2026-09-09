@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Person
@@ -97,6 +98,70 @@ fun LibraryScreen(navController: NavController) {
     var gridView by remember { mutableStateOf(isLibraryGridView(context)) }
     var searchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var showCreatePlaylist by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+
+    if (showCreatePlaylist) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                showCreatePlaylist = false
+                newPlaylistName = ""
+            },
+            containerColor = Color(0xFF282828),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text(
+                    text = "Give your playlist a name",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                )
+            },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    placeholder = { Text("My playlist", color = Color.Gray) },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF1ED760),
+                        unfocusedBorderColor = Color.Gray,
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val name = newPlaylistName.trim().ifBlank { "My Playlist" }
+                        libraryViewModel.createPlaylist(name) { ok ->
+                            if (ok) {
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    android.widget.Toast.makeText(context, "Playlist created!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                        showCreatePlaylist = false
+                        newPlaylistName = ""
+                    }
+                ) {
+                    Text("Create", color = Color(0xFF1ED760), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showCreatePlaylist = false
+                        newPlaylistName = ""
+                    }
+                ) {
+                    Text("Cancel", color = Color.LightGray)
+                }
+            }
+        )
+    }
 
     if (showAccount) {
         AccountSheet(
@@ -140,6 +205,20 @@ fun LibraryScreen(navController: NavController) {
                     ) {
                         searchActive = !searchActive
                         if (!searchActive) searchQuery = ""
+                    },
+            )
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Create playlist",
+                tint = Color.White,
+                modifier = Modifier
+                    .padding(end = 14.dp)
+                    .size(24.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        showCreatePlaylist = true
                     },
             )
             Box(
@@ -334,7 +413,7 @@ fun SumUpLibraryScreen(
                 }
             }
         }
-        items(entries) { entry ->
+        items(entries, key = { it.spotifyId }) { entry ->
             Row(
                 horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically,
@@ -346,14 +425,31 @@ fun SumUpLibraryScreen(
                         indication = null
                     ) { openLibraryEntry(entry, navController) }
             ) {
-                GlideImage(
-                    modifier = Modifier
-                        .size(55.dp)
-                        .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
-                    model = entry.coverUri,
-                    contentScale = ContentScale.Crop,
-                    contentDescription = ""
-                )
+                if (entry.spotifyId == Api.HomeCache.DOWNLOADS_ID) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(55.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF2E7D32)),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(26.dp),
+                        )
+                    }
+                } else {
+                    GlideImage(
+                        modifier = Modifier
+                            .size(55.dp)
+                            .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
+                        model = entry.coverUri,
+                        contentScale = ContentScale.Crop,
+                        contentDescription = ""
+                    )
+                }
                 Column(modifier = Modifier.padding(start = 12.dp)) {
                     Text(text = entry.name, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(text = entry.subtitle, color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -485,22 +581,40 @@ fun LibraryGridScreen(
                 Text(text = "Music on device", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        items(entries) { entry ->
+        items(entries, key = { it.spotifyId }) { entry ->
             Column(
                 modifier = Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) { openLibraryEntry(entry, navController) }
             ) {
-                GlideImage(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
-                    model = entry.coverUri,
-                    contentScale = ContentScale.Crop,
-                    contentDescription = ""
-                )
+                if (entry.spotifyId == Api.HomeCache.DOWNLOADS_ID) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF2E7D32)),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_download),
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp),
+                        )
+                    }
+                } else {
+                    GlideImage(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(if (entry.isPlaylist) 6.dp else 4.dp)),
+                        model = entry.coverUri,
+                        contentScale = ContentScale.Crop,
+                        contentDescription = ""
+                    )
+                }
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(text = entry.name, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(text = entry.subtitle, color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)

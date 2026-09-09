@@ -10,64 +10,61 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 data class PlayerResponse(
-    val responseContext: ResponseContext,
-    val playabilityStatus: PlayabilityStatus,
-    val playerConfig: PlayerConfig?,
-    val streamingData: StreamingData?,
-    val videoDetails: VideoDetails?,
+    val responseContext: ResponseContext? = null,
+    val playabilityStatus: PlayabilityStatus = PlayabilityStatus("OK", null),
+    val playerConfig: PlayerConfig? = null,
+    val streamingData: StreamingData? = null,
+    val videoDetails: VideoDetails? = null,
     @SerialName("playbackTracking")
-    val playbackTracking: PlaybackTracking?,
+    val playbackTracking: PlaybackTracking? = null,
 ) {
     @Serializable
     data class PlayabilityStatus(
         val status: String,
-        val reason: String?,
+        val reason: String? = null,
     )
 
     @Serializable
     data class PlayerConfig(
-        val audioConfig: AudioConfig,
+        val audioConfig: AudioConfig? = null,
     ) {
         @Serializable
         data class AudioConfig(
-            val loudnessDb: Double?,
-            val perceptualLoudnessDb: Double?,
+            val loudnessDb: Double? = null,
+            val perceptualLoudnessDb: Double? = null,
         )
     }
 
     @Serializable
     data class StreamingData(
-        val formats: List<Format>?,
-        val adaptiveFormats: List<Format>,
-        val expiresInSeconds: Int,
+        val formats: List<Format>? = null,
+        val adaptiveFormats: List<Format> = emptyList(),
+        val expiresInSeconds: Int = 0,
     ) {
         @Serializable
         data class Format(
-            val itag: Int,
-            val url: String?,
-            val mimeType: String,
-            val bitrate: Int,
-            val width: Int?,
-            val height: Int?,
-            val contentLength: Long?,
-            val quality: String,
-            val fps: Int?,
-            val qualityLabel: String?,
-            val averageBitrate: Int?,
-            val audioQuality: String?,
-            val approxDurationMs: String?,
-            val audioSampleRate: Int?,
-            val audioChannels: Int?,
-            val loudnessDb: Double?,
-            val lastModified: Long?,
-            val signatureCipher: String?,
-            val cipher: String?,
-            val audioTrack: AudioTrack?
+            val itag: Int = 0,
+            val url: String? = null,
+            val mimeType: String = "",
+            val bitrate: Int = 0,
+            val width: Int? = null,
+            val height: Int? = null,
+            val contentLength: Long? = null,
+            val quality: String = "",
+            val fps: Int? = null,
+            val qualityLabel: String? = null,
+            val averageBitrate: Int? = null,
+            val audioQuality: String? = null,
+            val loudnessDb: Double? = null,
+            val lastModified: Long? = null,
+            val signatureCipher: String? = null,
+            val cipher: String? = null,
+            val audioTrack: AudioTrack? = null
         ) {
             val isAudio: Boolean
-                get() = width == null
+                get() = width == null || mimeType.startsWith("audio/")
             val isOriginal: Boolean
-                get() = audioTrack?.isAutoDubbed != true
+                get() = audioTrack?.isAutoDubbed == null
 
             @Serializable
             data class AudioTrack(

@@ -19,6 +19,8 @@ import com.metrolist.innertube.models.YouTubeClient.Companion.IOS
 import com.metrolist.innertube.models.YouTubeClient.Companion.IOS_RECENT
 import com.metrolist.innertube.models.YouTubeClient.Companion.MOBILE
 import com.metrolist.innertube.models.YouTubeClient.Companion.TVHTML5
+import com.metrolist.innertube.models.YouTubeClient.Companion.TVHTML5_SIMPLY_EMBEDDED_PLAYER
+import com.metrolist.innertube.models.YouTubeClient.Companion.WEB
 import com.metrolist.innertube.models.YouTubeClient.Companion.WEB_REMIX
 import com.metrolist.innertube.models.response.PlayerResponse
 import com.metrolist.music.constants.AudioQuality
@@ -47,12 +49,15 @@ object YTPlayerUtils {
 
     private val poTokenGenerator = PoTokenGenerator()
 
-    // BitChord's fast path: current native YouTube Music returns direct URLs
-    // without cookies, PoTokens, player JavaScript, or signature deciphering.
-    private val MAIN_CLIENT: YouTubeClient = ANDROID_MUSIC
+    // Use WEB_REMIX with PoToken + signature timestamp as the primary client.
+    // ANDROID_MUSIC has been locked behind login by Google; WEB_REMIX backed by
+    // WebView-generated PoTokens resolves all catalog tracks.
+    private val MAIN_CLIENT: YouTubeClient = WEB_REMIX
 
     private val STREAM_FALLBACK_CLIENTS: Array<YouTubeClient> = arrayOf(
-        TVHTML5,
+        WEB_REMIX,
+        WEB,
+        TVHTML5_SIMPLY_EMBEDDED_PLAYER,
         ANDROID_VR_1_65_10,
         ANDROID_VR_1_43_32,
         IOS,
@@ -223,6 +228,17 @@ object YTPlayerUtils {
 
         // Check current status
         val currentStatus = mainResponse.playabilityStatus.status
+        val isUnavailable = currentStatus == "UNPLAYABLE" && (
+            mainResponse.playabilityStatus.reason?.contains("unavailable", ignoreCase = true) == true ||
+            mainResponse.playabilityStatus.reason?.contains("deleted", ignoreCase = true) == true
+        )
+        if (isUnavailable) {
+            throw PlaybackException(
+                mainResponse.playabilityStatus.reason ?: "Video unavailable",
+                null,
+                PlaybackException.ERROR_CODE_REMOTE_ERROR
+            )
+        }
         val isAgeRestricted = currentStatus in listOf("AGE_CHECK_REQUIRED", "AGE_VERIFICATION_REQUIRED", "LOGIN_REQUIRED", "CONTENT_CHECK_REQUIRED")
 
         if (isAgeRestricted) {
