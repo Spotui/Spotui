@@ -588,13 +588,16 @@ object SongPlayer {
 
         if (deezerEnabled && com.music.spotui.data.preferences.isDeezerEnabled(appContext)) {
             val spotifyId = trackIdRegistry[song] ?: spotifyTrackIdForPlayback(song)
+            val meta = metadataRegistry[song]
             val r = kotlinx.coroutines.withTimeoutOrNull(6_000) {
                 com.music.spotui.deezer.DeezerSource.resolve(
                     appContext,
                     spotifyId = spotifyId,
-                    isrc = null,
+                    isrc = meta?.isrc?.takeIf { it.isNotBlank() },
                     searchQuery = searchTextForPlayback(song),
                     expectedDurationSec = (durationRegistry[song] ?: 0) / 1000,
+                    expectedArtist = meta?.artist,
+                    expectedTitle = meta?.title,
                 )
             }
             if (r is com.music.spotui.deezer.DeezerSource.Result.Success) {
@@ -954,6 +957,8 @@ object SongPlayer {
             isrc = null,
             searchQuery = listOf(song.title, song.singer).filter { it.isNotBlank() }.joinToString(" "),
             expectedDurationSec = if (song.durationMs > 0) song.durationMs / 1000 else 0,
+            expectedArtist = song.singer.takeIf { it.isNotBlank() },
+            expectedTitle = song.title.takeIf { it.isNotBlank() },
         )
 
     private fun downloadDeezerRaw(
