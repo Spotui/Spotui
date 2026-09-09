@@ -158,6 +158,13 @@ object Spotify {
             null
         }
 
+    private fun JsonObject.bool(key: String): Boolean? =
+        try {
+            this[key]?.takeIf { it !is JsonNull }?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
+        } catch (_: Exception) {
+            null
+        }
+
     private fun JsonObject.arr(key: String): JsonArray? =
         try {
             this[key]?.takeIf { it !is JsonNull }?.jsonArray
@@ -224,6 +231,22 @@ object Spotify {
         if (response.status.value !in 200..299) {
             log("W", "spclientPost($path) HTTP ${response.status.value}: ${response.bodyAsText().take(200)}")
             throw SpotifyException(response.status.value, "spclientPost($path) HTTP ${response.status.value}")
+        }
+        val text = response.bodyAsText()
+        return if (text.isBlank()) buildJsonObject {} else json.parseToJsonElement(text).jsonObject
+    }
+
+    private suspend fun spclientGet(
+        path: String,
+        token: String,
+    ): JsonObject {
+        val url = if (path.startsWith("http")) path else "https://spclient.wg.spotify.com/$path"
+        val response = gqlClient.get(url) {
+            header("Authorization", "Bearer $token")
+        }
+        if (response.status.value !in 200..299) {
+            log("W", "spclientGet($path) HTTP ${response.status.value}: ${response.bodyAsText().take(200)}")
+            throw SpotifyException(response.status.value, "spclientGet($path) HTTP ${response.status.value}")
         }
         val text = response.bodyAsText()
         return if (text.isBlank()) buildJsonObject {} else json.parseToJsonElement(text).jsonObject
@@ -928,6 +951,10 @@ object Spotify {
                     parseGqlImages(it.jsonObject.arr("sources"))
                 } ?: emptyList()
 
+            val basePerm = playlist.str("basePermission")
+            val isPublic = (basePerm == "VIEWER")
+            val canEdit = playlist.obj("currentUserCapabilities")?.bool("canAdministratePermissions") == true
+
             SpotifyPlaylist(
                 id = playlistId,
                 name = playlist.str("name") ?: "",
@@ -941,6 +968,8 @@ object Spotify {
                     ),
                 tracks = SpotifyPlaylistTracksRef(total = playlist.obj("content")?.int("totalCount") ?: 0),
                 collaborative = (playlist.obj("members")?.arr("items")?.size ?: 0) > 1,
+                public = isPublic,
+                canEdit = canEdit,
             )
         }
 
@@ -1269,13 +1298,20 @@ object Spotify {
             val cleanId = playlistId.removePrefix("spotify:playlist:")
             val userId = me().getOrThrow().id
 
-            // 1. Set permission base level
+            // 1. Fetch current revision
+            val currPerm = runCatching {
+                spclientGet("playlist-permission/v1/playlist/$cleanId/permission/base", token)
+            }.getOrNull()
+            val revision = currPerm?.str("revision")
+
+            // 2. Set permission base level with revision
             val permPayload = buildJsonObject {
+                if (!revision.isNullOrBlank()) put("revision", revision)
                 put("permissionLevel", if (isPublic) "VIEWER" else "BLOCKED")
             }
             spclientPost("playlist-permission/v1/playlist/$cleanId/permission/base", permPayload, token)
 
-            // 2. Set public attribute in user rootlist
+            // 3. Set public attribute in user rootlist
             val rootlistPayload = buildJsonObject {
                 putJsonArray("deltas") {
                     addJsonObject {

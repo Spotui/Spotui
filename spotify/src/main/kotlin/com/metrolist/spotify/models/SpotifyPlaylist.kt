@@ -14,6 +14,7 @@ data class SpotifyPlaylist(
     val uri: String? = null,
     val public: Boolean? = null,
     val collaborative: Boolean = false,
+    val canEdit: Boolean = false,
     @SerialName("snapshot_id") val snapshotId: String? = null,
 )
 

@@ -123,7 +123,8 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var editName by remember { mutableStateOf("") }
-    var isPublicState by remember { mutableStateOf(false) }
+    val isPublic by playlistViewModel.isPublic.collectAsState()
+    val canEdit by playlistViewModel.canEdit.collectAsState()
 
     if (showEditDialog) {
         androidx.compose.material3.AlertDialog(
@@ -289,7 +290,7 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = {
                                         Text(
-                                            if (isPublicState) "Make private" else "Make public",
+                                            if (isPublic) "Make private" else "Make public",
                                             color = Color.White
                                         )
                                     },
@@ -297,13 +298,12 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                         Icon(
                                             Icons.Default.CheckCircle,
                                             contentDescription = null,
-                                            tint = if (isPublicState) Color(0xFF1ED760) else Color.White
+                                            tint = if (isPublic) Color(0xFF1ED760) else Color.White
                                         )
                                     },
                                     onClick = {
                                         showMenu = false
-                                        val nextPublic = !isPublicState
-                                        isPublicState = nextPublic
+                                        val nextPublic = !isPublic
                                         playlistViewModel.setPlaylistPublic(playlistId, nextPublic) { ok ->
                                             if (ok) {
                                                 val msg = if (nextPublic) "Playlist is now public" else "Playlist is now private"

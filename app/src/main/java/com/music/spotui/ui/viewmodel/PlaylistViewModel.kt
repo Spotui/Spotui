@@ -60,6 +60,12 @@ class PlaylistViewModel @Inject constructor(
     private val _isSaved = MutableStateFlow(false)
     val isSaved: StateFlow<Boolean> = _isSaved
 
+    private val _isPublic = MutableStateFlow(false)
+    val isPublic: StateFlow<Boolean> = _isPublic
+
+    private val _canEdit = MutableStateFlow(false)
+    val canEdit: StateFlow<Boolean> = _canEdit
+
     fun checkSaved(playlistId: String) {
         _isSaved.value = com.music.spotui.data.preferences.isPlaylistSavedInPref(context, playlistId)
     }
@@ -95,6 +101,15 @@ class PlaylistViewModel @Inject constructor(
                 _songs.value = it
             }
         }
+        viewModelScope.launch(Dispatchers.IO) {
+            if (com.music.spotui.data.api.SpotifyTokenProvider.ensureToken(context)) {
+                val pl = com.metrolist.spotify.Spotify.playlist(playlistId).getOrNull()
+                if (pl != null) {
+                    _isPublic.value = (pl.public == true)
+                    _canEdit.value = pl.canEdit
+                }
+            }
+        }
     }
 
     fun editPlaylist(playlistId: String, newName: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
@@ -122,6 +137,9 @@ class PlaylistViewModel @Inject constructor(
 
     fun setPlaylistPublic(playlistId: String, isPublic: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
         com.music.spotui.data.api.SpotifySync.setPlaylistPublic(context, playlistId, isPublic) { ok ->
+            if (ok) {
+                _isPublic.value = isPublic
+            }
             viewModelScope.launch(Dispatchers.Main) { onDone(ok) }
         }
     }
