@@ -104,6 +104,42 @@ object SpotifySync {
         }
     }
 
+    /** Edits a playlist's name and/or description on Spotify. */
+    fun editPlaylist(context: Context, playlistId: String, newName: String, onDone: (Boolean) -> Unit = {}) {
+        if (playlistId.isBlank() || newName.isBlank()) { onDone(false); return }
+        val app = context.applicationContext
+        scope.launch {
+            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            val ok = Spotify.editPlaylistAttributes(playlistId, newName = newName).isSuccess
+            if (!ok) Log.w(TAG, "failed editing playlist $playlistId")
+            onDone(ok)
+        }
+    }
+
+    /** Deletes a playlist on Spotify. */
+    fun deletePlaylist(context: Context, playlistId: String, onDone: (Boolean) -> Unit = {}) {
+        if (playlistId.isBlank()) { onDone(false); return }
+        val app = context.applicationContext
+        scope.launch {
+            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            val ok = Spotify.deletePlaylist(playlistId).isSuccess
+            if (!ok) Log.w(TAG, "failed deleting playlist $playlistId")
+            onDone(ok)
+        }
+    }
+
+    /** Sets a playlist's public/private visibility on Spotify. */
+    fun setPlaylistPublic(context: Context, playlistId: String, isPublic: Boolean, onDone: (Boolean) -> Unit = {}) {
+        if (playlistId.isBlank()) { onDone(false); return }
+        val app = context.applicationContext
+        scope.launch {
+            if (!SpotifyTokenProvider.ensureToken(app)) { onDone(false); return@launch }
+            val ok = Spotify.setPlaylistPublic(playlistId, isPublic).isSuccess
+            if (!ok) Log.w(TAG, "failed setting public=$isPublic for playlist $playlistId")
+            onDone(ok)
+        }
+    }
+
     // ── Playlist membership (which playlists contain a track) ──
     // Cached per playlist for the app session so the "Saved in" sheet can show
     // check marks without re-fetching on every open.

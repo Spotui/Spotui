@@ -24,9 +24,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -116,6 +119,97 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
     androidx.compose.runtime.LaunchedEffect(playlistId) {
         playlistViewModel.checkSaved(playlistId)
     }
+    var showMenu by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var editName by remember { mutableStateOf("") }
+    var isPublicState by remember { mutableStateOf(false) }
+
+    if (showEditDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showEditDialog = false },
+            containerColor = Color(0xFF282828),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text("Edit playlist", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = editName,
+                    onValueChange = { editName = it },
+                    placeholder = { Text("Playlist name", color = Color.Gray) },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF1ED760),
+                        unfocusedBorderColor = Color.Gray,
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        val name = editName.trim().ifBlank { playlist.name.ifBlank { playlistName } }
+                        playlistViewModel.editPlaylist(playlistId, name) { ok ->
+                            if (ok) {
+                                android.widget.Toast.makeText(context, "Playlist updated!", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        showEditDialog = false
+                    }
+                ) {
+                    Text("Save", color = Color(0xFF1ED760), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showEditDialog = false }
+                ) {
+                    Text("Cancel", color = Color.LightGray)
+                }
+            }
+        )
+    }
+
+    if (showDeleteDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            containerColor = Color(0xFF282828),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text("Delete playlist?", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            },
+            text = {
+                Text("This will remove '${playlist.name.ifBlank { playlistName }}' from your library and Spotify.", color = Color.LightGray)
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        playlistViewModel.deletePlaylist(playlistId) { ok ->
+                            if (ok) {
+                                android.widget.Toast.makeText(context, "Playlist deleted", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        navController.navigateUp()
+                    }
+                ) {
+                    Text("Delete", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showDeleteDialog = false }
+                ) {
+                    Text("Cancel", color = Color.LightGray)
+                }
+            }
+        )
+    }
     val displaySongs = when (sortOrder) {
         1 -> songs.sortedBy { it.title.lowercase() }
         2 -> songs.sortedByDescending { it.title.lowercase() }
@@ -158,7 +252,75 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                         containerColor = Color.Transparent,
                         titleContentColor = Color.White,
                     ),
-                    title = { Text(text = "") }
+                    title = { Text(text = "") },
+                    actions = {
+                        Box {
+                            Icon(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null
+                                    ) { showMenu = true },
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More options",
+                                tint = Color.White
+                            )
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                modifier = Modifier.background(Color(0xFF282828))
+                            ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Edit playlist", color = Color.White) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White)
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        editName = playlist.name.ifBlank { playlistName }
+                                        showEditDialog = true
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (isPublicState) "Make private" else "Make public",
+                                            color = Color.White
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = if (isPublicState) Color(0xFF1ED760) else Color.White
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        val nextPublic = !isPublicState
+                                        isPublicState = nextPublic
+                                        playlistViewModel.setPlaylistPublic(playlistId, nextPublic) { ok ->
+                                            if (ok) {
+                                                val msg = if (nextPublic) "Playlist is now public" else "Playlist is now private"
+                                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                )
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text("Delete playlist", color = Color(0xFFFF5252)) },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252))
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        showDeleteDialog = true
+                                    }
+                                )
+                            }
+                        }
+                    }
                 )
             }
         ) { innerPadding ->

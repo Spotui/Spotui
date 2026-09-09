@@ -96,4 +96,31 @@ class PlaylistViewModel @Inject constructor(
             }
         }
     }
+
+    fun editPlaylist(playlistId: String, newName: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
+        com.music.spotui.data.api.SpotifySync.editPlaylist(context, playlistId, newName) { ok ->
+            if (ok) {
+                val curAlbum = _playlist.value
+                if (curAlbum is Response.Success) {
+                    val updated = curAlbum.data.copy(name = newName)
+                    _playlist.value = Response.Success(updated)
+                    com.music.spotui.data.preferences.cachePlaylistData(context, playlistId, updated, emptyList())
+                }
+            }
+            onDone(ok)
+        }
+    }
+
+    fun deletePlaylist(playlistId: String, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
+        com.music.spotui.data.api.SpotifySync.deletePlaylist(context, playlistId) { ok ->
+            if (ok) {
+                com.music.spotui.data.preferences.setPlaylistSavedInPref(context, playlistId, false)
+            }
+            onDone(ok)
+        }
+    }
+
+    fun setPlaylistPublic(playlistId: String, isPublic: Boolean, onDone: (Boolean) -> Unit = {}) = viewModelScope.launch(Dispatchers.IO) {
+        com.music.spotui.data.api.SpotifySync.setPlaylistPublic(context, playlistId, isPublic, onDone)
+    }
 }

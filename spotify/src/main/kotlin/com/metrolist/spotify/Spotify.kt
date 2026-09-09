@@ -1148,7 +1148,8 @@ object Spotify {
         }
 
     /**
-     * Renames a playlist and/or updates its description via GQL mutation.
+     * Renames a playlist and/or updates its description via Spotify's internal
+     * playlist/v2 changes endpoint.
      */
     suspend fun editPlaylistAttributes(
         playlistId: String,
@@ -1156,16 +1157,154 @@ object Spotify {
         newDescription: String? = null,
     ): Result<Unit> =
         runCatching {
-            val vars = buildJsonObject {
-                put("playlistUri", "spotify:playlist:$playlistId")
-                if (newName != null) put("newName", newName)
-                if (newDescription != null) put("newDescription", newDescription)
+            val token = accessToken ?: throw SpotifyException(401, "Not authenticated")
+            val cleanId = playlistId.removePrefix("spotify:playlist:")
+            val payload = buildJsonObject {
+                putJsonArray("deltas") {
+                    addJsonObject {
+                        putJsonArray("ops") {
+                            addJsonObject {
+                                put("kind", "UPDATE_LIST_ATTRIBUTES")
+                                putJsonObject("updateListAttributes") {
+                                    putJsonObject("newAttributes") {
+                                        putJsonObject("values") {
+                                            if (!newName.isNullOrBlank()) put("name", newName)
+                                            if (!newDescription.isNullOrBlank()) put("description", newDescription)
+                                        }
+                                        putJsonArray("noValue") {}
+                                    }
+                                }
+                            }
+                        }
+                        putJsonObject("info") {
+                            putJsonObject("source") {
+                                put("client", "WEBPLAYER")
+                            }
+                        }
+                    }
+                }
             }
-            graphqlPost(
-                operationName = "editPlaylistAttributes",
-                variables = vars,
-            )
-            log("D", "editPlaylistAttributes: updated $playlistId (name=$newName)")
+
+            spclientPost("playlist/v2/playlist/$cleanId/changes", payload, token)
+            log("D", "editPlaylistAttributes: updated $cleanId (name=$newName, desc=$newDescription)")
+        }
+
+    /**
+     * Deletes a user's playlist by marking it deletedByOwner and removing it
+     * from their rootlist (library).
+     */
+    suspend fun deletePlaylist(playlistId: String): Result<Unit> =
+        runCatching {
+            val token = accessToken ?: throw SpotifyException(401, "Not authenticated")
+            val cleanId = playlistId.removePrefix("spotify:playlist:")
+            val uri = "spotify:playlist:$cleanId"
+            val userId = me().getOrThrow().id
+
+            // 1. Mark deletedByOwner on the playlist entity
+            runCatching {
+                val markDelPayload = buildJsonObject {
+                    putJsonArray("deltas") {
+                        addJsonObject {
+                            putJsonArray("ops") {
+                                addJsonObject {
+                                    put("kind", "UPDATE_LIST_ATTRIBUTES")
+                                    putJsonObject("updateListAttributes") {
+                                        putJsonObject("newAttributes") {
+                                            putJsonObject("values") {
+                                                put("deletedByOwner", true)
+                                            }
+                                            putJsonArray("noValue") {}
+                                        }
+                                    }
+                                }
+                            }
+                            putJsonObject("info") {
+                                putJsonObject("source") {
+                                    put("client", "WEBPLAYER")
+                                }
+                            }
+                        }
+                    }
+                }
+                spclientPost("playlist/v2/playlist/$cleanId/changes", markDelPayload, token)
+            }
+
+            // 2. Remove from rootlist
+            val remPayload = buildJsonObject {
+                putJsonArray("deltas") {
+                    addJsonObject {
+                        putJsonArray("ops") {
+                            addJsonObject {
+                                put("kind", "REM")
+                                putJsonObject("rem") {
+                                    put("itemsAsKey", true)
+                                    putJsonArray("items") {
+                                        addJsonObject {
+                                            put("uri", uri)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        putJsonObject("info") {
+                            putJsonObject("source") {
+                                put("client", "WEBPLAYER")
+                            }
+                        }
+                    }
+                }
+            }
+            spclientPost("playlist/v2/user/$userId/rootlist/changes", remPayload, token)
+            log("D", "deletePlaylist: deleted and removed $cleanId from rootlist")
+        }
+
+    /**
+     * Sets a playlist's public/private visibility.
+     * Public = VIEWER base permission + rootlist public=true.
+     * Private = BLOCKED base permission + rootlist public=false.
+     */
+    suspend fun setPlaylistPublic(playlistId: String, isPublic: Boolean): Result<Unit> =
+        runCatching {
+            val token = accessToken ?: throw SpotifyException(401, "Not authenticated")
+            val cleanId = playlistId.removePrefix("spotify:playlist:")
+            val userId = me().getOrThrow().id
+
+            // 1. Set permission base level
+            val permPayload = buildJsonObject {
+                put("permissionLevel", if (isPublic) "VIEWER" else "BLOCKED")
+            }
+            spclientPost("playlist-permission/v1/playlist/$cleanId/permission/base", permPayload, token)
+
+            // 2. Set public attribute in user rootlist
+            val rootlistPayload = buildJsonObject {
+                putJsonArray("deltas") {
+                    addJsonObject {
+                        putJsonArray("ops") {
+                            addJsonObject {
+                                put("kind", "UPDATE_ITEM_ATTRIBUTES")
+                                putJsonObject("updateItemAttributes") {
+                                    putJsonObject("newAttributes") {
+                                        putJsonObject("values") {
+                                            put("public", isPublic)
+                                        }
+                                        putJsonArray("noValue") {}
+                                    }
+                                    putJsonObject("item") {
+                                        put("uri", "spotify:playlist:$cleanId")
+                                    }
+                                }
+                            }
+                        }
+                        putJsonObject("info") {
+                            putJsonObject("source") {
+                                put("client", "WEBPLAYER")
+                            }
+                        }
+                    }
+                }
+            }
+            spclientPost("playlist/v2/user/$userId/rootlist/changes", rootlistPayload, token)
+            log("D", "setPlaylistPublic($cleanId, public=$isPublic) OK")
         }
 
     /**
