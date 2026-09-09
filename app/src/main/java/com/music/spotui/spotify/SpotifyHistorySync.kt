@@ -898,12 +898,16 @@ object SpotifyHistorySync {
     }
 
     private fun buildStartEvent(session: Session, durationMs: Long): JsonObject = buildJsonObject {
-        put("type", "track_transition")
+        put("type", "jssdk_playback_start")
         put("message", buildJsonObject {
+            put("play_track", session.trackUri)
+            put("file_id", "")
             put("playback_id", session.playbackId)
-            put("current_track_uri", session.trackUri)
-            put("ms_current_track_duration", durationMs)
             put("session_id", session.sessionId)
+            put("ms_start_position", 0)
+            put("initially_paused", false)
+            put("client_id", DEVICE_CLIENT_ID)
+            put("correlation_id", session.correlationId)
             put("feature_identifier", "web-player")
         })
     }
