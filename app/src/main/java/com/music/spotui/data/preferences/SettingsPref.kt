@@ -159,6 +159,11 @@ fun setCrossfadeDjMode(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_
  * The streaming quality to use for the *current* active network: the cellular setting
  * on a metered connection (mobile data / metered hotspot), the Wi-Fi setting otherwise.
  */
+// ── Spotify history sync ──
+private const val KEY_SPOTIFY_HISTORY_SYNC = "spotify_history_sync_enabled"
+fun isSpotifyHistorySyncEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_SPOTIFY_HISTORY_SYNC, true)
+fun setSpotifyHistorySyncEnabled(c: Context, v: Boolean) = prefs(c).edit().putBoolean(KEY_SPOTIFY_HISTORY_SYNC, v).apply()
+
 fun currentStreamingQuality(c: Context): StreamQuality {
     val cm = c.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
     val isMetered = cm?.isActiveNetworkMetered ?: false

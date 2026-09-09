@@ -682,7 +682,13 @@ class Api @Inject constructor(
             coverUri = "local://downloaded",
             isPlaylist = true,
         )
-        val merged = listOf(liked, downloaded) + playlists + albums
+        // ponytail: dedup by id first, then by normalized name for Spotify editorial
+        // playlists that can appear under two different ids (e.g. "Discover Weekly").
+        val dedupedPlaylists = playlists
+            .distinctBy { it.spotifyId }
+            .distinctBy { it.name.trim().lowercase() }
+        val merged = (listOf(liked, downloaded) + dedupedPlaylists + albums)
+            .distinctBy { it.spotifyId }
         HomeCache.library = merged
         emit(Response.Success(merged))
     }

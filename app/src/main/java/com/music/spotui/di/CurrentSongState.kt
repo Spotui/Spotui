@@ -154,6 +154,16 @@ class CurrentSongState @Inject constructor() {
         // time the user opens the player / scrolls to the lyrics card.
         if (playingState && title.isNotBlank()) {
             com.music.spotui.data.api.LyricsApi.prefetch(title, singer, album)
+            // Report to Spotify listening history (sync with Spotify recently played).
+            _queue.value.firstOrNull { it.id == songId }?.let { track ->
+                if (track.spotifyTrackId.isNotBlank() && track.durationMs > 0) {
+                    com.music.spotui.spotify.SpotifyHistorySync.onTrackStart(
+                        com.music.spotui.MyApplication.instance,
+                        track.spotifyTrackId,
+                        track.durationMs.toLong(),
+                    )
+                }
+            }
             // Log the play into the local listening history (History & stats screen).
             com.music.spotui.data.preferences.addListeningHistory(
                 com.music.spotui.MyApplication.instance,

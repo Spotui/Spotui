@@ -36,7 +36,7 @@ class LibraryViewModel @Inject constructor(
 
     init {
         // Seed UI with the last-seen library immediately so it's visible offline.
-        val cached = getCachedLibraryEntries(context)
+        val cached = getCachedLibraryEntries(context).distinctBy { it.spotifyId }
         if (cached.isNotEmpty()) _entries.value = Response.Success(cached)
         val cachedArtists = getCachedFollowedArtists(context)
         if (cachedArtists.isNotEmpty()) _followedArtists.value = cachedArtists

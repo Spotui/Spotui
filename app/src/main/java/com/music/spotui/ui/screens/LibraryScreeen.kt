@@ -334,7 +334,7 @@ fun SumUpLibraryScreen(
                 }
             }
         }
-        items(entries) { entry ->
+        items(entries, key = { it.spotifyId }) { entry ->
             Row(
                 horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically,
@@ -502,7 +502,7 @@ fun LibraryGridScreen(
                 Text(text = "Music on device", color = Color.Gray, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        items(entries) { entry ->
+        items(entries, key = { it.spotifyId }) { entry ->
             Column(
                 modifier = Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },

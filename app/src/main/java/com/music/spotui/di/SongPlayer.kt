@@ -1683,12 +1683,14 @@ object SongPlayer {
             val ctx = appCtx
             if (q != null && ctx != null) { playSong(q, ctx); return }
         }
+        appCtx?.let { com.music.spotui.spotify.SpotifyHistorySync.onResume(it) }
         player?.play()
     }
 
     fun pause() {
         cancelCrossfade()
         if (webPlaybackActive()) { SpotifyWebPlayer.pause(); return }
+        appCtx?.let { com.music.spotui.spotify.SpotifyHistorySync.onPause(it) }
         player?.let {
             it.playWhenReady = false
             // Remember where we stopped so a relaunch can resume mid-track.
@@ -1701,12 +1703,14 @@ object SongPlayer {
 
     fun stop() {
         cancelCrossfade()
+        appCtx?.let { com.music.spotui.spotify.SpotifyHistorySync.onStop(it) }
         player?.stop()
     }
 
     fun seekTo(position: Long) {
         cancelCrossfade()
         if (webPlaybackActive()) { SpotifyWebPlayer.seekTo(position); return }
+        appCtx?.let { com.music.spotui.spotify.SpotifyHistorySync.onSeek(it, position, isPlaying()) }
         player?.seekTo(position)
     }
 
