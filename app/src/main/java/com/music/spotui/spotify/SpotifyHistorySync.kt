@@ -716,7 +716,14 @@ object SpotifyHistorySync {
     ): PlaybackState? {
         val trackId = trackUri.trackId()
         val stationUri = trackId?.let { "spotify:station:track:$it" }
-        val resolvedContext = playbackContextUri?.normalizeSpotifyContextUri()
+        val rawContext = playbackContextUri?.normalizeSpotifyContextUri()
+            ?.takeUnless { it.equals("spotify:collection:tracks", ignoreCase = true) }
+        val resolvedContext = if (rawContext != null && rawContext.startsWith("spotify:playlist:") && !rawContext.startsWith("spotify:playlist-format:")) {
+            resolveSpotifyPlaylistFormatUri(cookie, token, dev.webgateUrl, rawContext) ?: rawContext
+        } else {
+            rawContext
+        }
+
         val contextUris = buildList {
             resolvedContext?.let { add(it) }
             add(trackUri)
@@ -725,13 +732,42 @@ object SpotifyHistorySync {
 
         Log.i(TAG, "requestPlaybackState: track=$trackUri contextUris=$contextUris")
         for ((i, ctx) in contextUris.withIndex()) {
-            val res = requestPlaybackStateWithContext(cookie, token, trackUri, ctx, dev, i == contextUris.lastIndex)
+            val isLast = (i == contextUris.lastIndex)
+            dev.commandQueue.clear()
+            val res = requestPlaybackStateWithContext(cookie, token, trackUri, ctx, dev, isLast)
             if (res != null) {
                 Log.i(TAG, "Playback state acquired with context: $ctx")
                 return res
             }
         }
         return null
+    }
+
+    private suspend fun resolveSpotifyPlaylistFormatUri(
+        cookie: String,
+        token: String,
+        webgateUrl: String,
+        playlistUri: String,
+    ): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder()
+                .url("$webgateUrl/playlist/v2/resolve-uri/$playlistUri")
+                .header("User-Agent", UA)
+                .header("Accept", "application/json")
+                .header("App-Platform", "WebPlayer")
+                .header("Referer", WEB_REFERER)
+                .header("Origin", WEB_ORIGIN)
+                .header("Cookie", cookie)
+                .header("Authorization", "Bearer $token")
+                .get()
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val root = json.parseToJsonElement(resp.body.string()).jsonObject
+                root["resolvedPlaylists"]?.jsonArray?.firstOrNull()?.jsonObject?.get("uri")?.jsonPrimitive?.contentOrNull
+                    ?: root["uri"]?.jsonPrimitive?.contentOrNull
+            }
+        }.getOrNull()
     }
 
     private fun String.normalizeSpotifyContextUri(): String? {
@@ -765,7 +801,7 @@ object SpotifyHistorySync {
 
     private suspend fun requestPlaybackStateWithContext(
         cookie: String, token: String, trackUri: String, contextUri: String,
-        dev: Device, notify: Boolean,
+        dev: Device, clearDeviceOnClientError: Boolean,
     ): PlaybackState? {
         val cmdWait = dev.commandQueue.next()
         val payload = buildJsonObject {
@@ -795,17 +831,17 @@ object SpotifyHistorySync {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     val body = resp.body.string()
-                    Log.w(TAG, "Play command HTTP ${resp.code}: $body")
+                    Log.w(TAG, "Play command HTTP ${resp.code} for $contextUri: $body")
                     if (resp.code == 429) backOff("command rate limited")
-                    else if (resp.code in listOf(400, 401, 403, 404, 409)) clearDevice(dev)
+                    else if (clearDeviceOnClientError && resp.code in listOf(400, 401, 403, 404, 409)) clearDevice(dev)
                     false
                 } else true
             }
         }.getOrDefault(false)
         if (!sent) return null
 
-        // Await the dealer's replace_state response (timeout reduced to 6s for responsiveness)
-        return withTimeoutOrNull(6_000L) {
+        // Await the dealer's replace_state response (timeout 5s for fast fallback to trackUri)
+        return withTimeoutOrNull(5_000L) {
             var wait = cmdWait
             while (true) {
                 val cmd = wait.await()
