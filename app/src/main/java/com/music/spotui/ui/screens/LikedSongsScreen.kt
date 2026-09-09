@@ -263,6 +263,11 @@ fun LikedSongsScreen(navController: NavController) {
                             // Always visible: pause when playing, resume when this
                             // list's track is paused, otherwise start from the top.
                             if (songs.isNotEmpty()) {
+                                val isOnline = com.music.spotui.data.preferences.isNetworkAvailable(context)
+                                val playableQueue = if (isOnline) songs else songs.filter {
+                                    com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
+                                    com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
+                                }
                                 val playing = likedSongsViewModel.currentSongPlayingState.value
                                 Box(
                                     contentAlignment = Alignment.Center,
@@ -274,19 +279,27 @@ fun LikedSongsScreen(navController: NavController) {
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null
                                         ) {
+                                            if (playableQueue.isEmpty()) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "No downloaded songs in Liked Songs",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                                return@clickable
+                                            }
                                             when {
                                                 playing -> likedSongsViewModel.setPlaying(false)
-                                                songs.any { it.id == likedSongsViewModel.currentSongId.value } ->
+                                                playableQueue.any { it.id == likedSongsViewModel.currentSongId.value } ->
                                                     likedSongsViewModel.setPlaying(true)
                                                 else -> {
-                                                    likedSongsViewModel.updateQueue(songs)
-                                                    SongPlayer.playSong(songs[0].url, context)
+                                                    likedSongsViewModel.updateQueue(playableQueue)
+                                                    SongPlayer.playSong(playableQueue[0].url, context)
                                                     likedSongsViewModel.updateSongState(
-                                                        songs[0].coverUri,
-                                                        songs[0].title,
-                                                        songs[0].singer,
+                                                        playableQueue[0].coverUri,
+                                                        playableQueue[0].title,
+                                                        playableQueue[0].singer,
                                                         true,
-                                                        songs[0].id,
+                                                        playableQueue[0].id,
                                                         0,
                                                         "Liked Songs"
                                                     )
@@ -309,8 +322,20 @@ fun LikedSongsScreen(navController: NavController) {
                 }
 
                 itemsIndexed(songs, key = { _, song -> song.id }) { index, song ->
-                    val currentColor = if (song.id == likedSongsViewModel.currentSongId.value)
-                        Color(AppPalette.toArgb()) else Color.White
+                    val isDownloaded = remember(song.id) {
+                        com.music.spotui.data.preferences.isDownloaded(context, song.id.toString()) ||
+                        com.music.spotui.data.preferences.downloadedPathForQuery(context, song.url) != null
+                    }
+                    val isOnline = remember { com.music.spotui.data.preferences.isNetworkAvailable(context) }
+                    val isPlayable = isOnline || isDownloaded
+
+                    val isCurrent = song.id == likedSongsViewModel.currentSongId.value
+                    val currentColor = when {
+                        isCurrent -> Color(AppPalette.toArgb())
+                        !isPlayable -> Color(0xFF666666)
+                        else -> Color.White
+                    }
+                    val subtitleColor = if (!isPlayable) Color(0xFF444444) else Color.Gray
 
                     Row(
                         horizontalArrangement = Arrangement.Start,
@@ -323,15 +348,28 @@ fun LikedSongsScreen(navController: NavController) {
                                 indication = null,
                                 onLongClick = { menuSong = song },
                                 onClick = {
-                                    likedSongsViewModel.updateQueue(songs)
+                                    if (!isPlayable) {
+                                        android.widget.Toast.makeText(
+                                            context,
+                                            "Download this song to play it offline",
+                                            android.widget.Toast.LENGTH_SHORT
+                                        ).show()
+                                        return@combinedClickable
+                                    }
+                                    val playableQueue = if (isOnline) songs else songs.filter {
+                                        com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
+                                        com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
+                                    }
+                                    likedSongsViewModel.updateQueue(playableQueue)
                                     SongPlayer.playSong(song.url, context)
+                                    val targetIdx = playableQueue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                                     likedSongsViewModel.updateSongState(
                                         song.coverUri,
                                         song.title,
                                         song.singer,
                                         true,
                                         song.id,
-                                        index,
+                                        targetIdx,
                                         "Liked Songs"
                                     )
                                 },
@@ -354,13 +392,23 @@ fun LikedSongsScreen(navController: NavController) {
                                 fontWeight = FontWeight.Medium,
                                 maxLines = 1
                             )
-                            Text(
-                                text = song.singer,
-                                color = Color.Gray,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isDownloaded) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_download),
+                                        contentDescription = "Downloaded",
+                                        tint = Color(AppPalette.toArgb()),
+                                        modifier = Modifier.size(12.dp).padding(end = 3.dp)
+                                    )
+                                }
+                                Text(
+                                    text = song.singer,
+                                    color = subtitleColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
                         }
                     }
                 }
