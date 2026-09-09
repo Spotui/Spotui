@@ -953,7 +953,9 @@ object Spotify {
 
             val basePerm = playlist.str("basePermission")
             val isPublic = (basePerm == "VIEWER")
-            val canEdit = playlist.obj("currentUserCapabilities")?.bool("canAdministratePermissions") == true
+            val ownerId = ownerUri.substringAfterLast(":")
+            val canAdmin = playlist.obj("currentUserCapabilities")?.bool("canAdministratePermissions") == true
+            val canEdit = canAdmin && !ownerId.equals("spotify", ignoreCase = true) && !playlistId.startsWith("37i9dQ")
 
             SpotifyPlaylist(
                 id = playlistId,

@@ -259,71 +259,73 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                     ),
                     title = { Text(text = "") },
                     actions = {
-                        Box {
-                            Icon(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) { showMenu = true },
-                                imageVector = Icons.Default.MoreVert,
-                                contentDescription = "More options",
-                                tint = Color.White
-                            )
-                            androidx.compose.material3.DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false },
-                                modifier = Modifier.background(Color(0xFF282828))
-                            ) {
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("Edit playlist", color = Color.White) },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White)
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        editName = playlist.name.ifBlank { playlistName }
-                                        showEditDialog = true
-                                    }
+                        if (canEdit) {
+                            Box {
+                                Icon(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) { showMenu = true },
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "More options",
+                                    tint = Color.White
                                 )
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            if (isPublic) "Make private" else "Make public",
-                                            color = Color.White
-                                        )
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = if (isPublic) Color(0xFF1ED760) else Color.White
-                                        )
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        val nextPublic = !isPublic
-                                        playlistViewModel.setPlaylistPublic(playlistId, nextPublic) { ok ->
-                                            if (ok) {
-                                                val msg = if (nextPublic) "Playlist is now public" else "Playlist is now private"
-                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                androidx.compose.material3.DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false },
+                                    modifier = Modifier.background(Color(0xFF282828))
+                                ) {
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Edit playlist", color = Color.White) },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White)
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            editName = playlist.name.ifBlank { playlistName }
+                                            showEditDialog = true
+                                        }
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (isPublic) "Make private" else "Make public",
+                                                color = Color.White
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = if (isPublic) Color(0xFF1ED760) else Color.White
+                                            )
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            val nextPublic = !isPublic
+                                            playlistViewModel.setPlaylistPublic(playlistId, nextPublic) { ok ->
+                                                if (ok) {
+                                                    val msg = if (nextPublic) "Playlist is now public" else "Playlist is now private"
+                                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                )
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text("Delete playlist", color = Color(0xFFFF5252)) },
-                                    leadingIcon = {
-                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252))
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        showDeleteDialog = true
-                                    }
-                                )
+                                    )
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text("Delete playlist", color = Color(0xFFFF5252)) },
+                                        leadingIcon = {
+                                            Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252))
+                                        },
+                                        onClick = {
+                                            showMenu = false
+                                            showDeleteDialog = true
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

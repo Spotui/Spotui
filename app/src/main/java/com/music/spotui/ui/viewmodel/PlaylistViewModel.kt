@@ -84,8 +84,15 @@ class PlaylistViewModel @Inject constructor(
         }
         playlistKey = playlistId
         checkSaved(playlistId)
+        _canEdit.value = false
+
         val cachedAlbum = com.music.spotui.data.preferences.getCachedPlaylistAlbum(context, playlistId)
-        if (cachedAlbum != null) _playlist.value = Response.Success(cachedAlbum)
+        if (cachedAlbum != null) {
+            _playlist.value = Response.Success(cachedAlbum)
+            if (cachedAlbum.artists.equals("spotify", ignoreCase = true) || playlistId.startsWith("37i9dQ")) {
+                _canEdit.value = false
+            }
+        }
         val cachedSongs = com.music.spotui.data.preferences.getCachedPlaylistSongs(context, playlistId)
         if (cachedSongs.isNotEmpty()) _songs.value = Response.Success(cachedSongs)
 
