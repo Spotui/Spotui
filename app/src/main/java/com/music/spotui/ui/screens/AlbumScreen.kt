@@ -381,6 +381,7 @@ fun SumUpAlbumScreen(
                                         indication = null,
                                     ) {
                                         albumViewModel.startShuffled(albumSongs)?.let { first ->
+                                            albumViewModel.updatePlaybackContext(albumViewModel.getAlbumContextUri())
                                             SongPlayer.playSong(first.url, context)
                                             albumViewModel.updateSongState(
                                                 first.coverUri,
@@ -417,6 +418,7 @@ fun SumUpAlbumScreen(
                                             albumSongs.any { it.id == albumViewModel.currentSongId.value } ->
                                                 albumViewModel.setPlaying(true)
                                             else -> {
+                                                albumViewModel.updatePlaybackContext(albumViewModel.getAlbumContextUri())
                                                 albumViewModel.updateQueue(albumSongs)
                                                 SongPlayer.playSong(albumSongs[0].url, context)
                                                 albumViewModel.updateSongState(
@@ -507,6 +509,7 @@ fun SumUpAlbumScreen(
                                         com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
                                         com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
                                     }
+                                    albumViewModel.updatePlaybackContext(albumViewModel.getAlbumContextUri())
                                     albumViewModel.updateQueue(playableQueue)
                                     SongPlayer.playSong(songItem.url, context)
                                     val targetIdx = playableQueue.indexOfFirst { it.id == songItem.id }.coerceAtLeast(0)

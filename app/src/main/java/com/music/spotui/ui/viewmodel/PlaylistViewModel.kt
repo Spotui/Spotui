@@ -47,6 +47,8 @@ class PlaylistViewModel @Inject constructor(
         currentSongState.updateSongState(coverUri, title, singer, playingState, songId, songIndex, album)
     }
 
+    fun updatePlaybackContext(uri: String?) = currentSongState.updatePlaybackContextUri(uri)
+
     val likeState = currentSongState.likeState
 
     fun updateLikeState(likeState: Boolean) {

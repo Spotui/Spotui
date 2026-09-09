@@ -42,6 +42,8 @@ class LikedSongsViewModel @Inject constructor(
         currentSongState.updateSongState(coverUri, title, singer, playingState, songId, songIndex, album)
     }
 
+    fun updatePlaybackContext(uri: String?) = currentSongState.updatePlaybackContextUri(uri)
+
     init {
         val cached = com.music.spotui.data.preferences.getCachedLikedSongs(context)
         if (cached.isNotEmpty()) _songs.value = Response.Success(cached)

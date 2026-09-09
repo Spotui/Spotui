@@ -102,6 +102,7 @@ object SpotifyHistorySync {
     private val rng = SecureRandom()
 
     @Volatile private var activeTrackUri: String? = null
+    @Volatile private var activePlaybackContextUri: String? = null
     @Volatile private var activeStartedAtMs = 0L
     @Volatile private var activeDurationMs = 0L
     @Volatile private var activeSessionStarted = false
@@ -213,7 +214,12 @@ object SpotifyHistorySync {
      * [spotifyTrackId] is the 22-char Spotify track id (or URI).
      * [durationMs] is the track length in ms.
      */
-    fun onTrackStart(context: Context, spotifyTrackId: String, durationMs: Long) {
+    fun onTrackStart(
+        context: Context,
+        spotifyTrackId: String,
+        durationMs: Long,
+        playbackContextUri: String? = null,
+    ) {
         val cleanId = extractTrackId(spotifyTrackId) ?: return
         if (!isSpotifyHistorySyncEnabled(context)) return
         if (isBackedOff()) {
@@ -227,7 +233,7 @@ object SpotifyHistorySync {
         val effectiveDurationMs = if (durationMs > 0) durationMs else 180_000L
         val durationSec = (effectiveDurationMs / 1000).toInt()
 
-        Log.i(TAG, "onTrackStart: id=$cleanId duration=${effectiveDurationMs}ms (active=$activeTrackUri)")
+        Log.i(TAG, "onTrackStart: id=$cleanId duration=${effectiveDurationMs}ms (context=$playbackContextUri, active=$activeTrackUri)")
 
         // If another song was playing, capture it for pending finalization
         if (activeTrackUri != null && activeTrackUri != trackUri && activeSessionStarted) {
@@ -250,6 +256,7 @@ object SpotifyHistorySync {
         startJob?.cancel()
 
         activeTrackUri = trackUri
+        activePlaybackContextUri = playbackContextUri
         activeStartedAtMs = System.currentTimeMillis()
         activeDurationMs = effectiveDurationMs
         activeSessionStarted = false
@@ -388,7 +395,7 @@ object SpotifyHistorySync {
             dev.commandQueue.clear()
 
             // Request playback state via connect-state command
-            val pbState = requestPlaybackState(cookie, token, trackUri, dev)
+            val pbState = requestPlaybackState(cookie, token, trackUri, dev, activePlaybackContextUri)
             if (pbState == null) {
                 Log.w(TAG, "Failed to acquire playback state from dealer for $trackUri")
                 session.startReported.set(false)
@@ -700,17 +707,60 @@ object SpotifyHistorySync {
 
     // ── Playback state request ──
 
-    private suspend fun requestPlaybackState(cookie: String, token: String, trackUri: String, dev: Device): PlaybackState? {
+    private suspend fun requestPlaybackState(
+        cookie: String,
+        token: String,
+        trackUri: String,
+        dev: Device,
+        playbackContextUri: String? = null,
+    ): PlaybackState? {
         val trackId = trackUri.trackId()
+        val stationUri = trackId?.let { "spotify:station:track:$it" }
+        val resolvedContext = playbackContextUri?.normalizeSpotifyContextUri()
         val contextUris = buildList {
+            resolvedContext?.let { add(it) }
             add(trackUri)
-            trackId?.let { add("spotify:station:track:$it") }
-        }
+            stationUri?.let { add(it) }
+        }.distinct()
+
+        Log.i(TAG, "requestPlaybackState: track=$trackUri contextUris=$contextUris")
         for ((i, ctx) in contextUris.withIndex()) {
             val res = requestPlaybackStateWithContext(cookie, token, trackUri, ctx, dev, i == contextUris.lastIndex)
-            if (res != null) return res
+            if (res != null) {
+                Log.i(TAG, "Playback state acquired with context: $ctx")
+                return res
+            }
         }
         return null
+    }
+
+    private fun String.normalizeSpotifyContextUri(): String? {
+        val v = trim()
+        return when {
+            v.startsWith("spotify:playlist:", ignoreCase = true) -> v
+            v.startsWith("spotify:playlist-format:", ignoreCase = true) -> v
+            v.startsWith("spotify:album:", ignoreCase = true) -> v
+            v.startsWith("spotify:artist:", ignoreCase = true) -> v
+            v.startsWith("spotify:station:track:", ignoreCase = true) -> v
+            v.startsWith("spotify:station:", ignoreCase = true) -> v
+            v.startsWith("spotify:user:", ignoreCase = true) && v.contains(":playlist:") -> v
+            v.equals("spotify:collection:tracks", ignoreCase = true) || v.equals("collection:tracks", ignoreCase = true) -> "spotify:collection:tracks"
+            v.contains("open.spotify.com/collection/tracks", ignoreCase = true) -> "spotify:collection:tracks"
+            v.contains("open.spotify.com/playlist/", ignoreCase = true) -> {
+                val id = v.substringAfter("open.spotify.com/playlist/", "").substringBefore('?').substringBefore('#').substringBefore('/').trim().takeIf { it.matches(Regex("^[A-Za-z0-9]{22}$")) }
+                id?.let { "spotify:playlist:$it" }
+            }
+            v.contains("open.spotify.com/album/", ignoreCase = true) -> {
+                val id = v.substringAfter("open.spotify.com/album/", "").substringBefore('?').substringBefore('#').substringBefore('/').trim().takeIf { it.matches(Regex("^[A-Za-z0-9]{22}$")) }
+                id?.let { "spotify:album:$it" }
+            }
+            v.contains("open.spotify.com/artist/", ignoreCase = true) -> {
+                val id = v.substringAfter("open.spotify.com/artist/", "").substringBefore('?').substringBefore('#').substringBefore('/').trim().takeIf { it.matches(Regex("^[A-Za-z0-9]{22}$")) }
+                id?.let { "spotify:artist:$it" }
+            }
+            v.matches(Regex("^[A-Za-z0-9]{22}$")) -> "spotify:playlist:$v"
+            else -> null
+        }
     }
 
     private suspend fun requestPlaybackStateWithContext(

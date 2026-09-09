@@ -49,6 +49,14 @@ class AlbumViewModel @Inject constructor(
         currentSongState.updateSongState(coverUri, title, singer, playingState, songId, songIndex, album)
     }
 
+    fun updatePlaybackContext(uri: String?) = currentSongState.updatePlaybackContextUri(uri)
+
+    fun getAlbumContextUri(): String? {
+        val key = albumKey ?: return null
+        val id = com.music.spotui.data.preferences.getCachedAlbumId(context, key) ?: return null
+        return "spotify:album:$id"
+    }
+
     val likeState = currentSongState.likeState
 
     fun updateLikeState(likeState : Boolean){

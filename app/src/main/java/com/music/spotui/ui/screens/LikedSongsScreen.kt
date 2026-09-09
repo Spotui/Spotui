@@ -292,6 +292,7 @@ fun LikedSongsScreen(navController: NavController) {
                                                 playableQueue.any { it.id == likedSongsViewModel.currentSongId.value } ->
                                                     likedSongsViewModel.setPlaying(true)
                                                 else -> {
+                                                    likedSongsViewModel.updatePlaybackContext("spotify:collection:tracks")
                                                     likedSongsViewModel.updateQueue(playableQueue)
                                                     SongPlayer.playSong(playableQueue[0].url, context)
                                                     likedSongsViewModel.updateSongState(
@@ -360,6 +361,7 @@ fun LikedSongsScreen(navController: NavController) {
                                         com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
                                         com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
                                     }
+                                    likedSongsViewModel.updatePlaybackContext("spotify:collection:tracks")
                                     likedSongsViewModel.updateQueue(playableQueue)
                                     SongPlayer.playSong(song.url, context)
                                     val targetIdx = playableQueue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)

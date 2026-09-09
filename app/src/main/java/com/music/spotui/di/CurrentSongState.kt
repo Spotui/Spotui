@@ -30,6 +30,13 @@ class CurrentSongState @Inject constructor() {
     private val _songId: MutableState<Int> = mutableStateOf(0)
     val songId : State<Int> get() = _songId
 
+    private val _playbackContextUri: MutableState<String?> = mutableStateOf(null)
+    val playbackContextUri: State<String?> get() = _playbackContextUri
+
+    fun updatePlaybackContextUri(uri: String?) {
+        _playbackContextUri.value = uri
+    }
+
     // The actual list the user is playing (album tracks, search results, liked
     // songs…). Next/previous operate on THIS, not on a re-derived global feed.
     private val _queue: MutableState<List<SongsModel>> = mutableStateOf(emptyList())
@@ -162,6 +169,7 @@ class CurrentSongState @Inject constructor() {
                         com.music.spotui.MyApplication.instance,
                         track.spotifyTrackId,
                         dur,
+                        playbackContextUri = _playbackContextUri.value,
                     )
                 }
             }

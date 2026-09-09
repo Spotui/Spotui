@@ -536,6 +536,7 @@ class Api @Inject constructor(
             if (cached.isEmpty()) emit(Response.Success(emptyList()))
             return@flow
         }
+        com.music.spotui.data.preferences.cacheAlbumId(context, cacheKey, albumId)
         Spotify.album(albumId).fold(
             onSuccess = { full ->
                 val songs = full.tracks?.items.orEmpty().map { it.toSongModel() }

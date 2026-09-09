@@ -53,6 +53,9 @@ class SearchViewModel @Inject constructor(private val repository: AppRepository,
      * if the user has since started something else.
      */
     fun startRadioFromSong(song: SongsModel) {
+        if (song.spotifyTrackId.isNotBlank()) {
+            currentSongState.updatePlaybackContextUri("spotify:station:track:${song.spotifyTrackId}")
+        }
         currentSongState.updateQueue(listOf(song))
         val seed = song.spotifyTrackId
         if (seed.isBlank()) return

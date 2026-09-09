@@ -30,6 +30,19 @@ fun cacheAlbumData(context: Context, albumKey: String, songs: List<SongsModel>) 
     }
 }
 
+fun cacheAlbumId(context: Context, albumKey: String, albumId: String) {
+    if (albumKey.isBlank() || albumId.isBlank()) return
+    runCatching {
+        context.getSharedPreferences("$PREF_ALBUM_PREFIX$albumKey", Context.MODE_PRIVATE)
+            .edit().putString("albumId", albumId).apply()
+    }
+}
+
+fun getCachedAlbumId(context: Context, albumKey: String): String? = runCatching {
+    context.getSharedPreferences("$PREF_ALBUM_PREFIX$albumKey", Context.MODE_PRIVATE)
+        .getString("albumId", null)
+}.getOrNull()
+
 fun getCachedAlbumSongs(context: Context, albumKey: String): List<SongsModel> = runCatching {
     val sp = context.getSharedPreferences("$PREF_ALBUM_PREFIX$albumKey", Context.MODE_PRIVATE)
     val raw = sp.getString("songs", null) ?: return emptyList()

@@ -343,6 +343,7 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                                 playableSongs.any { it.id == playlistViewModel.currentSongId.value } ->
                                                     playlistViewModel.setPlaying(true)
                                                 else -> {
+                                                    playlistViewModel.updatePlaybackContext("spotify:playlist:$playlistId")
                                                     playlistViewModel.updateQueue(playableSongs)
                                                     SongPlayer.playSong(playableSongs[0].url, context)
                                                     playlistViewModel.updateSongState(
@@ -411,6 +412,7 @@ fun PlaylistScreen(navController: NavController, playlistId: String, playlistNam
                                         com.music.spotui.data.preferences.isDownloaded(context, it.id.toString()) ||
                                         com.music.spotui.data.preferences.downloadedPathForQuery(context, it.url) != null
                                     }
+                                    playlistViewModel.updatePlaybackContext("spotify:playlist:$playlistId")
                                     playlistViewModel.updateQueue(playableQueue)
                                     SongPlayer.playSong(song.url, context)
                                     val targetIdx = playableQueue.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
