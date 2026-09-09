@@ -21,6 +21,34 @@ data class SearchResult(
 )
 
 object SearchPage {
+    fun fromMusicCardShelfRenderer(renderer: com.metrolist.innertube.models.MusicCardShelfRenderer): YTItem? {
+        val videoId = renderer.onTap?.watchEndpoint?.videoId
+            ?: renderer.buttons?.firstOrNull { it.buttonRenderer.command?.watchEndpoint != null }
+                ?.buttonRenderer?.command?.watchEndpoint?.videoId
+            ?: return null
+
+        val title = renderer.title?.runs?.firstOrNull()?.text ?: return null
+        val subtitle = renderer.subtitle?.runs?.splitBySeparator()
+        val artistRuns = subtitle?.firstOrNull()?.oddElements()
+        val artists = artistRuns?.map {
+            Artist(
+                name = it.text,
+                id = it.navigationEndpoint?.browseEndpoint?.browseId,
+            )
+        } ?: listOf(Artist(name = subtitle?.firstOrNull()?.firstOrNull()?.text ?: "", id = null))
+
+        val duration = subtitle?.lastOrNull()?.firstOrNull()?.text?.parseTime()
+
+        return SongItem(
+            id = videoId,
+            title = title,
+            artists = artists,
+            album = null,
+            duration = duration,
+            thumbnail = renderer.thumbnail?.musicThumbnailRenderer?.getThumbnailUrl() ?: "",
+        )
+    }
+
     fun toYTItem(renderer: MusicResponsiveListItemRenderer): YTItem? {
         val secondaryLine =
             renderer.flexColumns

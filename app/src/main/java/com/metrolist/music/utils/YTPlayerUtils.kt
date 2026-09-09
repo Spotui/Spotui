@@ -223,6 +223,17 @@ object YTPlayerUtils {
 
         // Check current status
         val currentStatus = mainResponse.playabilityStatus.status
+        val isUnavailable = currentStatus == "UNPLAYABLE" && (
+            mainResponse.playabilityStatus.reason?.contains("unavailable", ignoreCase = true) == true ||
+            mainResponse.playabilityStatus.reason?.contains("deleted", ignoreCase = true) == true
+        )
+        if (isUnavailable) {
+            throw PlaybackException(
+                mainResponse.playabilityStatus.reason ?: "Video unavailable",
+                null,
+                PlaybackException.ERROR_CODE_REMOTE_ERROR
+            )
+        }
         val isAgeRestricted = currentStatus in listOf("AGE_CHECK_REQUIRED", "AGE_VERIFICATION_REQUIRED", "LOGIN_REQUIRED", "CONTENT_CHECK_REQUIRED")
 
         if (isAgeRestricted) {
