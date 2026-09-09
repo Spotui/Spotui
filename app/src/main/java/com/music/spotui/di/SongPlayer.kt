@@ -518,10 +518,6 @@ object SongPlayer {
             }
         }
 
-        // Deezer — preferred, but when Lossless is selected a FREE Deezer account only
-        // yields MP3. In that case we HOLD the MP3 as a fallback and try the real FLAC
-        // sources first, so lossless isn't silently pre-empted by Deezer MP3.
-        var heldDeezer: com.music.spotui.deezer.DeezerSource.Result.Success? = null
         if (deezerEnabled && com.music.spotui.data.preferences.isDeezerEnabled(appContext)) {
             val spotifyId = trackIdRegistry[song] ?: spotifyTrackIdForPlayback(song)
             val r = kotlinx.coroutines.withTimeoutOrNull(6_000) {
@@ -534,22 +530,18 @@ object SongPlayer {
                 )
             }
             if (r is com.music.spotui.deezer.DeezerSource.Result.Success) {
-                if (r.mimeFlac || !quality.lossless) {
-                    Log.d(TAG, "deezer ${r.qualityLabel} for: $song")
-                    if (forPlayback) { currentSource = "Deezer"; currentQuality = r.qualityLabel }
-                    streamCache[song] = r.uri
-                    sourceCache[song] = "Deezer"
-                    qualityCache[song] = r.qualityLabel
-                    com.music.spotui.player.StreamUrlCache.put(
-                        trackId = song,
-                        directUrl = r.uri,
-                        source = "Deezer",
-                        quality = r.qualityLabel,
-                    )
-                    return r.uri
-                }
-                heldDeezer = r // Deezer MP3, but Lossless requested — try FLAC first.
-                Log.d(TAG, "deezer only MP3; trying FLAC first for: $song")
+                Log.d(TAG, "deezer ${r.qualityLabel} for: $song")
+                if (forPlayback) { currentSource = "Deezer"; currentQuality = r.qualityLabel }
+                streamCache[song] = r.uri
+                sourceCache[song] = "Deezer"
+                qualityCache[song] = r.qualityLabel
+                com.music.spotui.player.StreamUrlCache.put(
+                    trackId = song,
+                    directUrl = r.uri,
+                    source = "Deezer",
+                    quality = r.qualityLabel,
+                )
+                return r.uri
             } else {
                 Log.d(TAG, "deezer miss ($r), continuing for: $song")
             }
@@ -583,21 +575,7 @@ object SongPlayer {
             }
         }
 
-        // Deezer MP3 fallback (held above) before dropping to YouTube.
-        heldDeezer?.let { r ->
-            Log.d(TAG, "using Deezer MP3 fallback for: $song")
-            if (forPlayback) { currentSource = "Deezer"; currentQuality = r.qualityLabel }
-            streamCache[song] = r.uri
-            sourceCache[song] = "Deezer"
-            qualityCache[song] = r.qualityLabel
-            com.music.spotui.player.StreamUrlCache.put(
-                trackId = song,
-                directUrl = r.uri,
-                source = "Deezer",
-                quality = r.qualityLabel,
-            )
-            return r.uri
-        }
+        // InnerTube YouTube resolution
         if (!youtubeEnabled) {
             Log.w(TAG, "YouTube fallback disabled — no stream for: $song")
             return null

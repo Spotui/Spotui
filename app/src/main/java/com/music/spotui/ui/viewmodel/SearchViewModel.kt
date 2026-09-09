@@ -73,6 +73,12 @@ class SearchViewModel @Inject constructor(private val repository: AppRepository,
 
     fun search(query: String) {
         searchJob?.cancel()
+        if (query.isBlank()) {
+            _results.value = Response.Success(SearchResults())
+            _songs.value = Response.Success(emptyList())
+            return
+        }
+        _results.value = Response.Loading()
         searchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(150) // short debounce for snappy real-time results
             repository.searchEverything(query).collect { result ->
