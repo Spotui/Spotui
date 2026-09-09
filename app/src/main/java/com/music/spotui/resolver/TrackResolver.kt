@@ -217,7 +217,8 @@ class TrackResolver {
         var score = (titleSim * 50.0) + (artistSim * 25.0)
 
         if (candidate.isTopicChannel && titleSim >= 0.70) score += 30.0
-        if (candidate.isOfficialMusicVideo && titleSim >= 0.70) score += 15.0
+        if (candidate.isOfficialMusicVideo && titleSim >= 0.70) score += 20.0
+        if (artistSim >= 0.8 && titleSim >= 0.70) score += 25.0
         if (titleSim >= 0.85) score += 25.0
 
         // Negative keyword noise filtering
@@ -234,9 +235,10 @@ class TrackResolver {
             }
         }
 
-        // Apply duration penalty only if duration is known
+        // Apply duration penalty in seconds, capped so official videos with intros are not destroyed
         if (hasDuration) {
-            val durationPenalty = (durationDiff / 200.0)
+            val durationDiffSec = durationDiff / 1000.0
+            val durationPenalty = (durationDiffSec * 1.5).coerceAtMost(25.0)
             score -= durationPenalty
         }
 
