@@ -3,6 +3,8 @@ package com.music.spotui.resolver
 import android.util.Log
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.SongItem
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlin.math.abs
 
 data class TrackTarget(
@@ -126,30 +128,43 @@ class TrackResolver {
     /**
      * Resolves all viable candidates ranked in order of best match to fallback options.
      */
-    suspend fun resolveRankedCandidates(target: TrackTarget): List<Candidate> {
+    suspend fun resolveRankedCandidates(target: TrackTarget): List<Candidate> = coroutineScope {
         val cleanTitle = sanitizeTitle(target.title)
         val cleanArtist = sanitizeArtist(target.artist)
         val baseQuery = "$cleanTitle $cleanArtist"
 
-        val t1Items = runCatching {
-            YouTube.search(baseQuery, YouTube.SearchFilter.FILTER_SONG).getOrNull()?.items?.filterIsInstance<SongItem>().orEmpty()
-        }.getOrDefault(emptyList()).map { it.toCandidate() }
+        val t1Deferred = async {
+            runCatching {
+                YouTube.search(baseQuery, YouTube.SearchFilter.FILTER_SONG).getOrNull()?.items?.filterIsInstance<SongItem>().orEmpty()
+            }.getOrDefault(emptyList()).map { it.toCandidate() }
+        }
 
-        val t2Items = runCatching {
-            YouTube.search(baseQuery, YouTube.SearchFilter.FILTER_VIDEO).getOrNull()?.items?.filterIsInstance<SongItem>().orEmpty()
-        }.getOrDefault(emptyList()).map { it.toCandidate() }
+        val t2Deferred = async {
+            runCatching {
+                YouTube.search(baseQuery, YouTube.SearchFilter.FILTER_VIDEO).getOrNull()?.items?.filterIsInstance<SongItem>().orEmpty()
+            }.getOrDefault(emptyList()).map { it.toCandidate() }
+        }
 
-        val t3Items = runCatching {
-            YouTube.searchGeneral(baseQuery).getOrNull()?.items?.filterIsInstance<SongItem>().orEmpty()
-        }.getOrDefault(emptyList()).map { it.toCandidate() }
+        val t3Deferred = async {
+            runCatching {
+                YouTube.searchGeneral(baseQuery).getOrNull()?.items?.filterIsInstance<SongItem>().orEmpty()
+            }.getOrDefault(emptyList()).map { it.toCandidate() }
+        }
+
+        val t1Items = t1Deferred.await()
+        val t2Items = t2Deferred.await()
+        val t3Items = t3Deferred.await()
 
         val combined = (t1Items + t2Items + t3Items).distinctBy { it.videoId }
-        if (combined.isEmpty()) return emptyList()
+        if (combined.isEmpty()) return@coroutineScope emptyList()
 
-        return combined.sortedByDescending { candidate ->
+        combined.mapNotNull { candidate ->
             val score = calculateScore(target, candidate, strict = false, allowVideos = true)
-            if (score > 0.0) score else calculatePermissiveScore(target, candidate)
-        }
+            if (score > 0.0) candidate to score else {
+                val pScore = calculatePermissiveScore(target, candidate)
+                if (pScore > 0.0) candidate to pScore else null
+            }
+        }.sortedByDescending { it.second }.map { it.first }
     }
 
     private fun evaluateCandidates(
@@ -196,10 +211,14 @@ class TrackResolver {
             candidate.channelTitle
         )
 
-        var score = (titleSim * 45.0) + (artistSim * 25.0)
+        // If title similarity is too low (< 0.55), this is an unrelated track (e.g. different song by same artist). Reject!
+        if (titleSim < 0.55) return 0.0
 
-        if (candidate.isTopicChannel) score += 30.0
-        if (candidate.isOfficialMusicVideo) score += 15.0
+        var score = (titleSim * 50.0) + (artistSim * 25.0)
+
+        if (candidate.isTopicChannel && titleSim >= 0.70) score += 30.0
+        if (candidate.isOfficialMusicVideo && titleSim >= 0.70) score += 15.0
+        if (titleSim >= 0.85) score += 25.0
 
         // Negative keyword noise filtering
         val noiseWords = listOf("live", "remix", "cover", "acoustic", "slowed", "reverb", "tribute", "karaoke", "instrumental", "8d")
@@ -226,6 +245,7 @@ class TrackResolver {
 
     fun calculatePermissiveScore(target: TrackTarget, candidate: Candidate): Double {
         val titleSim = StringSimilarity.levenshteinRatio(sanitizeTitle(target.title).lowercase(), sanitizeTitle(candidate.title).lowercase())
+        if (titleSim < 0.50) return 0.0
         val hasDuration = target.durationMs > 0 && candidate.durationMs > 0
         val durationPenalty = if (hasDuration) abs(target.durationMs - candidate.durationMs) / 1000.0 else 0.0
         return (titleSim * 70.0 - durationPenalty).coerceAtLeast(0.0)
@@ -253,7 +273,9 @@ class TrackResolver {
         val isOmv = musicVideoType?.contains("OMV", ignoreCase = true) == true ||
             channelName.contains("VEVO", ignoreCase = true) ||
             title.contains("Official Music Video", ignoreCase = true) ||
-            title.contains("Official Video", ignoreCase = true)
+            title.contains("Official Video", ignoreCase = true) ||
+            title.contains("Official Audio", ignoreCase = true) ||
+            title.contains("Audio", ignoreCase = true)
 
         return Candidate(
             videoId = id,

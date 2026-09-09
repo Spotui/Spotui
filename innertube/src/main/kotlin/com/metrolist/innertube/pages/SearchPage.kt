@@ -108,24 +108,38 @@ object SearchPage {
             }
             renderer.isSong -> {
                 val libraryTokens = PageHelper.extractLibraryTokensFromMenuItems(renderer.menu?.menuRenderer?.items)
+                val videoId = renderer.playlistItemData?.videoId
+                    ?: renderer.navigationEndpoint?.watchEndpoint?.videoId
+                    ?: renderer.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId
+                    ?: return null
+
+                val title = renderer.flexColumns
+                    .firstOrNull()
+                    ?.musicResponsiveListItemFlexColumnRenderer
+                    ?.text
+                    ?.runs
+                    ?.firstOrNull()
+                    ?.text ?: return null
+
+                val parsedArtists = secondaryLine.firstOrNull()?.oddElements()?.mapNotNull { run ->
+                    run.text.takeIf { it.isNotBlank() }?.let { name ->
+                        Artist(
+                            name = name,
+                            id = run.navigationEndpoint?.browseEndpoint?.browseId,
+                        )
+                    }
+                }
+                val artists = if (!parsedArtists.isNullOrEmpty()) {
+                    parsedArtists
+                } else {
+                    val fallbackName = secondaryLine.firstOrNull()?.firstOrNull()?.text?.takeIf { it.isNotBlank() }
+                    if (fallbackName != null) listOf(Artist(name = fallbackName, id = null)) else emptyList()
+                }
 
                 SongItem(
-                    id = renderer.playlistItemData?.videoId ?: return null,
-                    title =
-                        renderer.flexColumns
-                            .firstOrNull()
-                            ?.musicResponsiveListItemFlexColumnRenderer
-                            ?.text
-                            ?.runs
-                            ?.firstOrNull()
-                            ?.text ?: return null,
-                    artists =
-                        secondaryLine.firstOrNull()?.oddElements()?.map {
-                            Artist(
-                                name = it.text,
-                                id = it.navigationEndpoint?.browseEndpoint?.browseId,
-                            )
-                        } ?: return null,
+                    id = videoId,
+                    title = title,
+                    artists = artists,
                     album =
                         secondaryLine.getOrNull(1)?.firstOrNull()?.takeIf { it.navigationEndpoint?.browseEndpoint != null }?.let {
                             Album(
@@ -140,7 +154,8 @@ object SearchPage {
                             ?.text
                             ?.parseTime(),
                     musicVideoType = renderer.musicVideoType,
-                    thumbnail = renderer.thumbnail?.musicThumbnailRenderer?.getThumbnailUrl() ?: return null,
+                    thumbnail = renderer.thumbnail?.musicThumbnailRenderer?.getThumbnailUrl()
+                        ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
                     explicit =
                         renderer.badges?.find {
                             it.musicInlineBadgeRenderer?.icon?.iconType == "MUSIC_EXPLICIT_BADGE"

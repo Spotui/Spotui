@@ -583,37 +583,6 @@ object SongPlayer {
             }
         }
 
-        // JioSaavn: High-speed ad-free direct 320 kbps / 160 kbps CDN stream engine
-        val saavnMeta = metadataRegistry[song] ?: ensureSpotifyMatchMetadata(song)
-        val saavnTitle = saavnMeta?.title ?: searchTextForPlayback(song).substringAfter(" - ").ifBlank { searchTextForPlayback(song) }
-        val saavnArtist = saavnMeta?.artist ?: searchTextForPlayback(song).substringBefore(" - ").takeIf { searchTextForPlayback(song).contains(" - ") }.orEmpty()
-        val saavnExpectedDuration = durationRegistry[song]
-
-        val saavnRes = kotlinx.coroutines.withTimeoutOrNull(3_000) {
-            com.music.spotui.saavn.SaavnSource.resolve(
-                title = saavnTitle,
-                artist = saavnArtist,
-                expectedDurationMs = saavnExpectedDuration,
-            )
-        }
-        if (saavnRes is com.music.spotui.saavn.SaavnSource.Result.Success) {
-            val qLabel = saavnRes.track.qualityLabel
-            if (forPlayback) {
-                currentSource = "Saavn"
-                currentQuality = qLabel
-            }
-            streamCache[song] = saavnRes.track.url
-            sourceCache[song] = "Saavn"
-            qualityCache[song] = qLabel
-            com.music.spotui.player.StreamUrlCache.put(
-                trackId = song,
-                directUrl = saavnRes.track.url,
-                source = "Saavn",
-                quality = qLabel,
-            )
-            return saavnRes.track.url
-        }
-
         // Deezer MP3 fallback (held above) before dropping to YouTube.
         heldDeezer?.let { r ->
             Log.d(TAG, "using Deezer MP3 fallback for: $song")
