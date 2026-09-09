@@ -156,11 +156,12 @@ class CurrentSongState @Inject constructor() {
             com.music.spotui.data.api.LyricsApi.prefetch(title, singer, album)
             // Report to Spotify listening history (sync with Spotify recently played).
             _queue.value.firstOrNull { it.id == songId }?.let { track ->
-                if (track.spotifyTrackId.isNotBlank() && track.durationMs > 0) {
+                if (track.spotifyTrackId.isNotBlank()) {
+                    val dur = if (track.durationMs > 0) track.durationMs.toLong() else 180_000L
                     com.music.spotui.spotify.SpotifyHistorySync.onTrackStart(
                         com.music.spotui.MyApplication.instance,
                         track.spotifyTrackId,
-                        track.durationMs.toLong(),
+                        dur,
                     )
                 }
             }

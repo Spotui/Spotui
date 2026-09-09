@@ -275,6 +275,12 @@ object SongPlayer {
                     }
                     restoreQuery = null
                     player!!.playWhenReady = true
+
+                    val syncTrackId = trackIdRegistry[song] ?: spotifyTrackIdForPlayback(song)
+                    val syncDurationMs = durationRegistry[song]?.toLong() ?: 0L
+                    if (syncTrackId != null) {
+                        com.music.spotui.spotify.SpotifyHistorySync.onTrackStart(appContext, syncTrackId, syncDurationMs)
+                    }
                 }
                 startPositionWatch()
                 prefetchNextTracks(appContext, 3)
