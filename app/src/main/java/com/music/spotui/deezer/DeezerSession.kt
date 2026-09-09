@@ -115,12 +115,19 @@ internal object DeezerSession {
                 if (delta > 15) continue
             }
 
-            // Negative keyword check: reject cover/tribute/karaoke/backing track unless requested
-            val noiseWords = listOf("cover", "tribute", "karaoke", "backing track", "instrumental")
+            // Negative keyword check: reject live, remix, acoustic, cover, tribute, karaoke, etc. unless requested
+            val noiseWords = listOf(
+                "live", "remix", "rmx", "cover", "tribute", "karaoke",
+                "backing track", "instrumental", "acoustic", "slowed", "reverb",
+                "speed up", "sped up", "club mix", "vip mix", "dub mix", "mashup"
+            )
+            val candVersion = obj.optString("title_version")
+            val candAlbum = obj.optJSONObject("album")?.optString("title").orEmpty()
+            val candFullText = "$candTitle $candVersion $candAlbum".lowercase()
+            val targetFullText = "${targetTitle.orEmpty()} $query".lowercase()
+
             val hasNoise = noiseWords.any { noise ->
-                !targetTitle.orEmpty().contains(noise, ignoreCase = true) &&
-                !query.contains(noise, ignoreCase = true) &&
-                candTitle.contains(noise, ignoreCase = true)
+                !targetFullText.contains(noise) && candFullText.contains(noise)
             }
             if (hasNoise) continue
 

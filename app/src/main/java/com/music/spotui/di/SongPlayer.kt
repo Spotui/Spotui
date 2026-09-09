@@ -588,14 +588,15 @@ object SongPlayer {
 
         if (deezerEnabled && com.music.spotui.data.preferences.isDeezerEnabled(appContext)) {
             val spotifyId = trackIdRegistry[song] ?: spotifyTrackIdForPlayback(song)
-            val meta = metadataRegistry[song]
+            val meta = metadataRegistry[song] ?: ensureSpotifyMatchMetadata(song)
+            val expectedDuration = (durationRegistry[song] ?: 0) / 1000
             val r = kotlinx.coroutines.withTimeoutOrNull(6_000) {
                 com.music.spotui.deezer.DeezerSource.resolve(
                     appContext,
                     spotifyId = spotifyId,
                     isrc = meta?.isrc?.takeIf { it.isNotBlank() },
                     searchQuery = searchTextForPlayback(song),
-                    expectedDurationSec = (durationRegistry[song] ?: 0) / 1000,
+                    expectedDurationSec = expectedDuration,
                     expectedArtist = meta?.artist,
                     expectedTitle = meta?.title,
                 )

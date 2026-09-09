@@ -222,7 +222,11 @@ class TrackResolver {
         if (titleSim >= 0.85) score += 25.0
 
         // Negative keyword noise filtering
-        val noiseWords = listOf("live", "remix", "cover", "acoustic", "slowed", "reverb", "tribute", "karaoke", "instrumental", "8d")
+        val noiseWords = listOf(
+            "live", "remix", "rmx", "cover", "acoustic", "slowed", "reverb",
+            "tribute", "karaoke", "instrumental", "8d", "sped up", "speed up",
+            "club mix", "vip mix", "dub mix", "mashup", "parody"
+        )
         val candidateTitleLower = candidate.title.lowercase()
         val targetTitleLower = target.title.lowercase()
 
@@ -231,7 +235,7 @@ class TrackResolver {
             val candidateHasWord = candidateTitleLower.contains(word)
             if (!targetHasWord && candidateHasWord) {
                 if (strict) return 0.0 // Reject completely in strict mode
-                score -= 40.0
+                score -= 80.0
             }
         }
 
@@ -248,6 +252,11 @@ class TrackResolver {
     fun calculatePermissiveScore(target: TrackTarget, candidate: Candidate): Double {
         val titleSim = StringSimilarity.levenshteinRatio(sanitizeTitle(target.title).lowercase(), sanitizeTitle(candidate.title).lowercase())
         if (titleSim < 0.50) return 0.0
+        val noiseWords = listOf("live", "remix", "rmx", "cover", "acoustic", "slowed", "reverb", "tribute", "karaoke", "instrumental")
+        val hasNoise = noiseWords.any { noise ->
+            !target.title.contains(noise, ignoreCase = true) && candidate.title.contains(noise, ignoreCase = true)
+        }
+        if (hasNoise) return 0.0
         val hasDuration = target.durationMs > 0 && candidate.durationMs > 0
         val durationPenalty = if (hasDuration) abs(target.durationMs - candidate.durationMs) / 1000.0 else 0.0
         return (titleSim * 70.0 - durationPenalty).coerceAtLeast(0.0)
