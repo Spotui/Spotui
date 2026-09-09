@@ -876,24 +876,32 @@ object SpotifyHistorySync {
         session: Session, debugSource: String, positionMs: Long, previousPositionMs: Long,
         durationMs: Long, seqNum: Int, includeStats: Boolean, pausedOverride: Boolean?,
     ): JsonObject = buildJsonObject {
+        val paused = pausedOverride ?: session.statePaused
         put("seq_num", seqNum)
-        put("state_ref", buildJsonObject {
+        put("debug_source", debugSource)
+        put("previous_position", previousPositionMs.coerceAtLeast(0L))
+        putJsonObject("state_ref") {
             put("state_machine_id", session.stateMachineId)
             put("state_id", session.stateId)
-            put("paused", pausedOverride ?: session.statePaused)
-        })
-        put("previous_position", previousPositionMs)
-        put("position", positionMs)
-        put("duration", durationMs)
-        put("debug_source", debugSource)
+            put("paused", paused)
+        }
+        putJsonObject("sub_state") {
+            put("playback_speed", if (paused) 0 else 1)
+            put("position", positionMs.coerceAtLeast(0L))
+            put("duration", durationMs.coerceAtLeast(0L))
+            put("media_type", "AUDIO")
+            put("bitrate", BITRATE)
+            put("audio_quality", "HIGH")
+            put("format", "file_ids_mp4")
+            put("is_video_on", false)
+        }
         if (includeStats) {
-            put("playback_stats", buildJsonObject {
-                put("ms_played", positionMs)
-                put("ms_nominal_played", positionMs)
-                put("ms_actual_duration", durationMs)
-                put("session_id", session.sessionId)
-                put("playback_id", session.playbackId)
-            })
+            putJsonObject("playback_stats") {
+                put("ms_total_est", durationMs.coerceAtLeast(0L))
+                put("ms_metadata_duration", 0)
+                put("ms_manifest_latency", 0)
+                put("ms_latency", 98)
+            }
         }
     }
 
