@@ -7,8 +7,8 @@ import java.net.URL
 
 /** Checks GitHub for a release newer than this build. */
 object UpdateChecker {
-    private const val LATEST = "https://api.github.com/repos/Spotui/Spotui/releases/latest"
-    private const val RELEASES_PAGE = "https://github.com/Spotui/Spotui/releases/latest"
+    private const val LATEST = "https://api.github.com/repos/Nonit0/Spotui/releases/latest"
+    private const val RELEASES_PAGE = "https://github.com/Nonit0/Spotui/releases/latest"
     // GitHub allows 60 unauthenticated API calls an hour per IP; a few a day is plenty.
     private const val CHECK_EVERY_MS = 6 * 60 * 60 * 1000L
     private const val PREF = "updates"

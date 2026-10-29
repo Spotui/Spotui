@@ -3,7 +3,6 @@ package com.metrolist.music.utils.potoken
 import android.webkit.CookieManager
 import com.metrolist.music.utils.cipher.CipherDeobfuscator
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -20,7 +19,7 @@ class PoTokenGenerator {
     private var webPoTokenStreamingPot: String? = null
     private var webPoTokenGenerator: PoTokenWebView? = null
 
-    fun getWebClientPoToken(videoId: String, sessionId: String): PoTokenResult? {
+    suspend fun getWebClientPoToken(videoId: String, sessionId: String): PoTokenResult? {
         Timber.tag(TAG).d("getWebClientPoToken called: videoId=$videoId, visitorDataPresent=${sessionId.isNotBlank()}")
         Timber.tag(TAG).d("WebView state: supported=$webViewSupported, badImpl=$webViewBadImpl")
         if (!webViewSupported || webViewBadImpl) {
@@ -29,8 +28,8 @@ class PoTokenGenerator {
         }
 
         return try {
-            Timber.tag(TAG).d("Calling runBlocking to generate poToken...")
-            runBlocking { getWebClientPoToken(videoId, sessionId, forceRecreate = false) }
+            // Suspends instead of runBlocking so the caller's timeouts can cancel a hung WebView.
+            getWebClientPoToken(videoId, sessionId, forceRecreate = false)
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "poToken generation exception: ${e.javaClass.simpleName}: ${e.message}")
             when (e) {
