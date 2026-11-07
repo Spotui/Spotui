@@ -446,6 +446,7 @@ object SongPlayer {
         val (sp, sf) = withContext(Dispatchers.Main) { createPlayerWithFilter(ctx, handleAudioFocus = false) }
         val startAt = withContext(Dispatchers.Main) { primary.currentPosition + leadMs }
         isCrossfading = true // user actions now cancel this via cancelCrossfade()
+        val generation = crossfadeGeneration.get()
         secondaryPlayer = sp
         secondaryPlayerFilter = sf
         pendingNextSong = null // same song: no queue/UI change when it completes
@@ -481,7 +482,7 @@ object SongPlayer {
         if (!stillOn()) return false
         withContext(Dispatchers.Main) { sp.playWhenReady = true }
         preloadedNext = null // the promoted player starts without anything queued ahead
-        performCrossfade(400, djMode = false)
+        performCrossfade(400, djMode = false, generation = generation)
         currentSource = sourceCache[song] ?: currentSource
         currentQuality = qualityCache[song].orEmpty()
         Log.d(TAG, "switched seamlessly to $currentSource for: $song")
@@ -509,8 +510,10 @@ object SongPlayer {
         streamUrl: String,
         mimeType: String? = null,
         query: String = currentRequest,
-        title: String = metaTitle,
-        artist: String = metaArtist,
+        // The request's own metadata, so the notification names the track that is playing.
+        // The global now-playing meta can lag behind a request, which showed another title.
+        title: String = metadataRegistry[query]?.title?.takeIf { it.isNotBlank() } ?: metaTitle,
+        artist: String = metadataRegistry[query]?.artist?.takeIf { it.isNotBlank() } ?: metaArtist,
         cover: String = metaCover,
     ): MediaItem {
         val metadata = androidx.media3.common.MediaMetadata.Builder()
@@ -1542,6 +1545,10 @@ object SongPlayer {
     @Volatile private var positionWatchJob: kotlinx.coroutines.Job? = null
     @Volatile private var pendingNextSong: com.music.spotui.data.entity.SongsModel? = null
     @Volatile private var pendingNextSongIdx: Int = 0
+    // Bumped by every cancel. A crossfade still resolving or ramping when the user acts
+    // (tap, next, prev) must not create, ramp or promote its player, nor change the
+    // current request: that handed the tapped track's slot to the crossfade's track.
+    private val crossfadeGeneration = java.util.concurrent.atomic.AtomicLong(0L)
 
     /** Notified (on the main thread) when the active ExoPlayer instance changes after a
      *  crossfade, so the media session can re-bind to the promoted player. */
@@ -1563,6 +1570,7 @@ object SongPlayer {
     /** Cancel an in-flight crossfade and tear down the secondary player, restoring the
      *  primary to full volume with its filter disabled. Safe to call when not crossfading. */
     private fun cancelCrossfade() {
+        crossfadeGeneration.incrementAndGet()
         if (!isCrossfading && secondaryPlayer == null) return
         crossfadeJob?.cancel()
         crossfadeJob = null
@@ -1642,12 +1650,17 @@ object SongPlayer {
         }
         if (!ready || dur <= 0 || dur - pos > 30_000L) return
         val song = next
+        val requestAtStart = currentRequest
         preloading = true
         try {
             val url = runCatching { resolveStreamUrl(song.url, ctx) }.getOrNull() ?: return
             withContext(Dispatchers.Main) {
-                // Only if nothing changed while resolving.
-                if (player !== p || p.mediaItemCount != 1 || state.queue.value.none { it.url == song.url }) return@withContext
+                // Only if nothing changed while resolving. A tap (playSong) meanwhile
+                // changes the request: this track was queued after the old one, so it
+                // must not be queued after the new one.
+                if (currentRequest != requestAtStart || player !== p || p.mediaItemCount != 1 ||
+                    state.queue.value.none { it.url == song.url }
+                ) return@withContext
                 val mime = streamMimeType(url, sourceCache[song.url].orEmpty())
                 p.addMediaItem(buildMediaItem(url, mime, song.url, song.title, song.singer, song.coverUri))
                 preloadedNext = song.url
@@ -1668,64 +1681,81 @@ object SongPlayer {
         if (cur < 0 || cur >= q.size - 1) return // last track ends normally
         val nextSong = q[cur + 1]
         isCrossfading = true
+        val generation = crossfadeGeneration.get()
         scope.launch {
             try {
-                val nextUrl = resolveStreamUrl(nextSong.url, ctx, forPlayback = true) ?: run {
-                    isCrossfading = false; return@launch
-                }
-                // Effective duration: never longer than the real time left on the outgoing track.
-                val remaining = withContext(Dispatchers.Main) {
-                    val p = player ?: return@withContext configuredMs.toLong()
-                    val d = p.duration; val ps = p.currentPosition
-                    if (d > 0 && ps >= 0) (d - ps) else configuredMs.toLong()
-                }
-                val effectiveMs = minOf(configuredMs.toLong(), remaining).coerceAtLeast(1000L).toInt()
+                val nextUrl = resolveStreamUrl(nextSong.url, ctx, forPlayback = true)
                 val djMode = com.music.spotui.data.preferences.isCrossfadeDjMode(ctx)
-
-                // Stash for finalizeCrossfade, which updates the UI when the new track
-                // is the sole audio source (not at blend-start while the old track fades).
-                pendingNextSong = nextSong
-                pendingNextSongIdx = cur + 1
-                // Pre-load metadata so buildMediaItem() tags the secondary player correctly.
-                setNowPlayingMeta(nextSong.title, nextSong.singer, nextSong.coverUri)
-                withContext(Dispatchers.Main) {
+                val effectiveMs = withContext(Dispatchers.Main) {
+                    // The user acted while this was resolving (tap, next, prev): that action
+                    // already cancelled the crossfade, so leave the player and state alone.
+                    if (generation != crossfadeGeneration.get()) return@withContext null
+                    if (nextUrl == null) {
+                        isCrossfading = false
+                        return@withContext null
+                    }
+                    // Effective duration: never longer than the real time left on the outgoing track.
+                    val p = player
+                    val remaining = if (p == null) configuredMs.toLong() else {
+                        val d = p.duration; val ps = p.currentPosition
+                        if (d > 0 && ps >= 0) (d - ps) else configuredMs.toLong()
+                    }
+                    // Stash for finalizeCrossfade, which updates the UI when the new track
+                    // is the sole audio source (not at blend-start while the old track fades).
+                    pendingNextSong = nextSong
+                    pendingNextSongIdx = cur + 1
+                    // Pre-load metadata so buildMediaItem() tags the secondary player correctly.
+                    setNowPlayingMeta(nextSong.title, nextSong.singer, nextSong.coverUri)
                     val (sp, sf) = createPlayerWithFilter(ctx, handleAudioFocus = false)
                     secondaryPlayer = sp
                     secondaryPlayerFilter = sf
-                    sp.setMediaItem(buildMediaItem(nextUrl, streamMimeType(nextUrl)))
+                    sp.setMediaItem(
+                        buildMediaItem(
+                            nextUrl, streamMimeType(nextUrl),
+                            nextSong.url, nextSong.title, nextSong.singer, nextSong.coverUri,
+                        ),
+                    )
                     sp.prepare()
                     sp.volume = 0f
                     sp.playWhenReady = true
-                }
-                performCrossfade(effectiveMs, djMode)
+                    minOf(configuredMs.toLong(), remaining).coerceAtLeast(1000L).toInt()
+                } ?: return@launch
+                performCrossfade(effectiveMs, djMode, generation)
             } catch (e: Exception) {
                 Log.e(TAG, "crossfade failed", e)
-                cancelCrossfade()
+                if (generation == crossfadeGeneration.get()) cancelCrossfade()
             }
         }
     }
 
-    private suspend fun performCrossfade(effectiveMs: Int, djMode: Boolean) {
+    private suspend fun performCrossfade(effectiveMs: Int, djMode: Boolean, generation: Long) {
         val steps = 50
         val delayPerStep = (effectiveMs / steps).coerceAtLeast(20)
-        if (djMode) {
-            currentPlayerFilter?.apply {
-                filterType = com.music.spotui.audio.BiquadFilter.FilterType.LOW_PASS
-                cutoffFrequencyHz = CF_LPF_START_HZ; enabled = true
+        val started = withContext(Dispatchers.Main) {
+            if (generation != crossfadeGeneration.get()) return@withContext false
+            if (djMode) {
+                currentPlayerFilter?.apply {
+                    filterType = com.music.spotui.audio.BiquadFilter.FilterType.LOW_PASS
+                    cutoffFrequencyHz = CF_LPF_START_HZ; enabled = true
+                }
+                secondaryPlayerFilter?.apply {
+                    filterType = com.music.spotui.audio.BiquadFilter.FilterType.HIGH_PASS
+                    cutoffFrequencyHz = CF_HPF_START_HZ; enabled = true
+                }
             }
-            secondaryPlayerFilter?.apply {
-                filterType = com.music.spotui.audio.BiquadFilter.FilterType.HIGH_PASS
-                cutoffFrequencyHz = CF_HPF_START_HZ; enabled = true
-            }
+            crossfadeJob?.cancel()
+            true
         }
-        crossfadeJob?.cancel()
+        if (!started) return
         val job = scope.launch {
             try {
                 for (step in 0..steps) {
-                    if (!isActive) break
+                    // A cancelled crossfade stops here: it must not finalize afterwards.
+                    if (!isActive) return@launch
                     val progress = step.toFloat() / steps
                     val angle = (progress * PI / 2).toFloat()
                     withContext(Dispatchers.Main) {
+                        if (generation != crossfadeGeneration.get()) return@withContext
                         player?.volume = cos(angle)
                         secondaryPlayer?.volume = sin(angle)
                         if (djMode) {
@@ -1736,7 +1766,7 @@ object SongPlayer {
                     }
                     kotlinx.coroutines.delay(delayPerStep.toLong())
                 }
-                finalizeCrossfade()
+                finalizeCrossfade(generation)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             }
@@ -1745,8 +1775,9 @@ object SongPlayer {
         job.join()
     }
 
-    private suspend fun finalizeCrossfade() {
+    private suspend fun finalizeCrossfade(generation: Long) {
         withContext(Dispatchers.Main) {
+            if (generation != crossfadeGeneration.get()) return@withContext
             val incoming = secondaryPlayer ?: run { isCrossfading = false; return@withContext }
             val old = player
             // Promote the incoming (secondary) player to primary.

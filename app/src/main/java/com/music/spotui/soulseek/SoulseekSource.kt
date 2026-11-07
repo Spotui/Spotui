@@ -24,7 +24,13 @@ object SoulseekSource {
     fun flac(context: Context, cacheKey: String, title: String, artist: String, durationSec: Int): File? {
         val dir = File(context.cacheDir, "slsk").apply { mkdirs() }
         val file = File(dir, "$cacheKey.flac")
-        if (file.length() > 0) return file.also { it.setLastModified(System.currentTimeMillis()) }
+        if (file.length() > 0) {
+            // Reuse a cached file only if it is this track: the key can collide (it falls
+            // back to a string hash), and a wrong file would play under this track's title.
+            if (isRightTrack(file, durationSec)) return file.also { it.setLastModified(System.currentTimeMillis()) }
+            Log.d(TAG, "cached $cacheKey.flac is not this track: refetching")
+            file.delete()
+        }
         if (!login(context)) return null
         val query = "${artist.substringBefore(",")} ${baseTitle(title)}".replace(Regex("""[^\p{L}\p{Nd}\s]"""), " ").replace(Regex("""\s+"""), " ").trim()
         // Peers answer by connecting to us; from behind NAT that takes a while.

@@ -15,6 +15,17 @@ object Downloads {
     private const val TAG = "Downloads"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * Stable file name for a download, from the track's play query rather than
+     * `song.id`. Ids are 31-bit hashes, so two tracks can share one; the second download
+     * then overwrote the first track's audio file, and that track played the wrong audio.
+     */
+    internal fun fileKey(song: com.music.spotui.data.entity.SongsModel): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(song.url.toByteArray(Charsets.UTF_8))
+            .take(16)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
     // Tracks which song queries are mid-download so the UI can show a spinner and
     // we don't kick off the same download twice.
     private val downloading = java.util.Collections.newSetFromMap(
@@ -238,8 +249,8 @@ object Downloads {
             }
             if (r is com.music.spotui.lossless.LosslessSource.Result.Success) {
                 val dir = java.io.File(appContext.filesDir, "downloads").apply { mkdirs() }
-                val outFile = java.io.File(dir, "${song.id}.flac")
-                val tmpFile = java.io.File(dir, "${song.id}.flacpart")
+                val outFile = java.io.File(dir, "${fileKey(song)}.flac")
+                val tmpFile = java.io.File(dir, "${fileKey(song)}.flacpart")
                 if (httpDownloadRanged(r.track.url, tmpFile, song.url) && tmpFile.renameTo(outFile)) {
                     com.music.spotui.data.preferences.addDownload(appContext, song, outFile.absolutePath)
                     Log.d(TAG, "lossless downloaded (${r.track.provider} ${r.track.quality}-bit): ${song.title}")
@@ -268,8 +279,8 @@ object Downloads {
         }
 
         val dir = java.io.File(appContext.filesDir, "downloads").apply { mkdirs() }
-        val outFile = java.io.File(dir, "${song.id}.m4a")
-        val tmpFile = java.io.File(dir, "${song.id}.part")
+        val outFile = java.io.File(dir, "${fileKey(song)}.m4a")
+        val tmpFile = java.io.File(dir, "${fileKey(song)}.part")
 
         if (!httpDownloadRanged(playback.streamUrl, tmpFile, song.url)) {
             runCatching { tmpFile.delete() }
@@ -287,8 +298,8 @@ object Downloads {
     /**
      * Download a Deezer track and decrypt it to a real audio file. Resolves the
      * stream (ISRC → Deezer, account-tier quality), streams the Blowfish-encrypted
-     * CDN bytes and decrypts every 3rd 2048-byte block on the way to `<id>.flac` /
-     * `<id>.mp3`. Returns false on any miss so the caller can fall back.
+     * CDN bytes and decrypts every 3rd 2048-byte block on the way to `<fileKey>.flac` /
+     * `<fileKey>.mp3`. Returns false on any miss so the caller can fall back.
      */
     private suspend fun resolveDeezerRaw(
         song: com.music.spotui.data.entity.SongsModel,
@@ -309,8 +320,8 @@ object Downloads {
     ): Boolean {
         val ext = if (raw.isFlac) "flac" else "mp3"
         val dir = java.io.File(appContext.filesDir, "downloads").apply { mkdirs() }
-        val outFile = java.io.File(dir, "${song.id}.$ext")
-        val tmpFile = java.io.File(dir, "${song.id}.dzpart")
+        val outFile = java.io.File(dir, "${fileKey(song)}.$ext")
+        val tmpFile = java.io.File(dir, "${fileKey(song)}.dzpart")
         if (!deezerDownloadDecrypted(raw.url, raw.encrypted, raw.trackId, tmpFile, song.url)) {
             runCatching { tmpFile.delete() }
             return false
